@@ -1,0 +1,43 @@
+.leaflet-container {
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 6px;
+}
+
+.leaflet-popup-content {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.endpoint-marker {
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.contamination-marker {
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
+  animation: pulse 2s infinite;
+}
+
+.risk-marker {
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 77, 79, 0.1);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
+  }
+}

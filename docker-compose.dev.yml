@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with PostGIS and pgRouting
+  postgres:
+    image: postgis/postgis:14-3.2
+    container_name: cras_postgres_dev
+    environment:
+      POSTGRES_DB: cras_db
+      POSTGRES_USER: cras_user
+      POSTGRES_PASSWORD: cras_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - cras_dev_network
+    command: >
+      bash -c "
+      apt-get update && 
+      apt-get install -y postgresql-14-pgrouting &&
+      docker-entrypoint.sh postgres
+      "
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: cras_redis_dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - cras_dev_network
+    command: redis-server --appendonly yes
+
+  # FastAPI Backend (Development)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: cras_backend_dev
+    environment:
+      DATABASE_URL: postgresql://cras_user:cras_password@postgres:5432/cras_db
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: cras_db
+      DB_USER: cras_user
+      DB_PASSWORD: cras_password
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DEBUG: "true"
+      SECRET_KEY: dev-secret-key
+      API_KEY: dev-api-key
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cras_dev_network
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # React Frontend (Development)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: cras_frontend_dev
+    environment:
+      REACT_APP_API_URL: http://localhost:8000/api/v1
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - cras_dev_network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm start
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  cras_dev_network:
+    driver: bridge
