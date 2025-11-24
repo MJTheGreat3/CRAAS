@@ -3,8 +3,8 @@ from sqlalchemy import text
 from typing import List, Dict, Any
 from datetime import datetime
 import time
-from ..models.contamination import ContaminationEvent
-from ..schemas.contamination import ContaminationInput, ContaminationAnalysisResponse, RiskResult
+from app.models.contamination import ContaminationEvent
+from app.schemas.contamination import ContaminationInput, ContaminationAnalysisResponse, RiskResult
 
 class ContaminationAnalysisService:
     def __init__(self, db: Session):
@@ -14,15 +14,35 @@ class ContaminationAnalysisService:
         """Perform contamination spread analysis using pgRouting."""
         start_time = time.time()
         
-        # Step 1: Snap contamination point to nearest hydrology line
+        # Step 1: Snap contamination point to nearest waterway and find nearest vertex
         snap_query = text("""
+            WITH contamination_point AS (
+                SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
+            ),
+            nearest_waterway AS (
+                SELECT 
+                    w.id,
+                    ST_ClosestPoint(w.geom, cp.geom) as snapped_point,
+                    ST_Distance(w.geom, cp.geom) as snap_distance_m
+                FROM waterways w, contamination_point cp
+                ORDER BY w.geom <-> cp.geom
+                LIMIT 1
+            ),
+            nearest_vertex AS (
+                SELECT 
+                    v.id as vertex_id,
+                    v.geom
+                FROM waterways_vertices_pgr v, nearest_waterway nw
+                ORDER BY v.geom <-> nw.snapped_point
+                LIMIT 1
+            )
             SELECT 
-                hl.id as line_id,
-                ST_ClosestPoint(hl.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) as snapped_point,
-                ST_Distance(hl.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) as distance_m
-            FROM hydro_lines hl
-            ORDER BY hl.geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
-            LIMIT 1
+                nw.id as waterway_id,
+                nw.snapped_point,
+                nw.snap_distance_m,
+                nv.vertex_id,
+                nv.geom as vertex_geom
+            FROM nearest_waterway nw, nearest_vertex nv
         """)
         
         snap_result = self.db.execute(snap_query, {
@@ -31,92 +51,161 @@ class ContaminationAnalysisService:
         }).fetchone()
         
         if not snap_result:
-            raise ValueError("No hydrology network found near the specified point")
+            raise ValueError("No waterway network found near the specified point")
         
-        # Step 2: Find all reachable endpoints within time window using pgRouting
-        analysis_query = text("""
+        source_vertex = snap_result.vertex_id
+        
+        # Step 2: Find all water intakes and calculate shortest paths using pgRouting
+        water_intakes_query = text("""
             WITH contamination_source AS (
-                SELECT ST_ClosestPoint(hl.geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) as geom
-                FROM hydro_lines hl
-                ORDER BY hl.geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
-                LIMIT 1
+                SELECT :source_vertex as vertex_id
             ),
-            network_analysis AS (
+            water_intakes_vertices AS (
                 SELECT 
-                    e.endpoint_id,
-                    e.endpoint_type,
-                    e.geom as endpoint_geom,
+                    wi.id as intake_id,
+                    wi.name,
+                    wi.amenity,
+                    v.id as vertex_id,
+                    v.geom as vertex_geom,
+                    wi.geom as intake_geom
+                FROM water_intakes_sch wi, waterways_vertices_pgr v
+                ORDER BY wi.geom <-> v.geom
+            ),
+            shortest_paths AS (
+                SELECT 
+                    wiv.intake_id,
+                    wiv.name,
+                    wiv.amenity,
+                    wiv.intake_geom,
                     pgr_dijkstra(
-                        'SELECT id, source, target, length_m as cost FROM hydro_lines',
-                        (SELECT source FROM hydro_lines ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) LIMIT 1),
-                        (SELECT source FROM hydro_lines hl2, endpoints e 
-                         WHERE e.endpoint_id = hl2.id AND e.endpoint_id = :endpoint_id LIMIT 1)
-                    ) as path
-                FROM endpoints e, contamination_source cs
-                WHERE e.endpoint_type IN ('hospital', 'school', 'farmland', 'residential')
+                        'SELECT id, source, target, ST_Length(geom::geography) as cost FROM waterways',
+                        cs.vertex_id,
+                        wiv.vertex_id,
+                        directed := false
+                    ) as path_result
+                FROM water_intakes_vertices wiv, contamination_source cs
             )
             SELECT 
-                endpoint_id,
-                endpoint_type,
-                SUM(cost) / 1000.0 / :dispersion_rate as arrival_hours,
-                SUM(cost) / 1000.0 as distance_km
-            FROM network_analysis, pgr_dijkstra(
-                'SELECT id, source, target, length_m as cost FROM hydro_lines',
-                (SELECT source FROM hydro_lines ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) LIMIT 1),
-                target
-            ) as dijkstra
-            WHERE SUM(cost) / 1000.0 / :dispersion_rate <= :time_window
-            GROUP BY endpoint_id, endpoint_type
+                sp.intake_id,
+                sp.name,
+                sp.amenity,
+                sp.intake_geom,
+                SUM(pr.cost) as total_cost_m,
+                SUM(pr.cost) / 1000.0 / :dispersion_rate as arrival_hours,
+                SUM(pr.cost) / 1000.0 as distance_km
+            FROM shortest_paths sp, unnest(sp.path_result) as pr
+            WHERE pr.aggr_cost >= 0  -- Only include valid paths
+            GROUP BY sp.intake_id, sp.name, sp.amenity, sp.intake_geom
+            HAVING SUM(pr.cost) / 1000.0 / :dispersion_rate <= :time_window
             ORDER BY arrival_hours
         """)
         
-        # Simplified version for now - we'll refine this based on actual database structure
-        results_query = text("""
-            SELECT 
-                e.endpoint_id,
-                e.endpoint_type,
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
-                    e.geom
-                ) / 1000.0 / :dispersion_rate as arrival_hours,
-                ST_Distance(
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
-                    e.geom
-                ) / 1000.0 as distance_km
-            FROM endpoints e
-            WHERE ST_Distance(
-                ST_SetSRID(ST_MakePoint(:lon, :lat), 4326),
-                e.geom
-            ) / 1000.0 / :dispersion_rate <= :time_window
-            ORDER BY arrival_hours
-        """)
-        
-        results = self.db.execute(results_query, {
-            "lat": input_data.lat,
-            "lon": input_data.lon,
+        water_intakes_results = self.db.execute(water_intakes_query, {
+            "source_vertex": source_vertex,
             "dispersion_rate": input_data.dispersion_rate_kmph,
             "time_window": input_data.time_window_hours
         }).fetchall()
         
-        # Step 3: Process results and determine risk levels
+        # Step 3: Find all endpoints (schools) and calculate shortest paths
+        endpoints_query = text("""
+            WITH contamination_source AS (
+                SELECT :source_vertex as vertex_id
+            ),
+            endpoints_vertices AS (
+                SELECT 
+                    e.id as endpoint_id,
+                    e.name,
+                    e.amenity,
+                    e.school,
+                    v.id as vertex_id,
+                    v.geom as vertex_geom,
+                    e.geom as endpoint_geom
+                FROM endpoint_sch e, waterways_vertices_pgr v
+                ORDER BY e.geom <-> v.geom
+            ),
+            shortest_paths AS (
+                SELECT 
+                    ev.endpoint_id,
+                    ev.name,
+                    ev.amenity,
+                    ev.school,
+                    ev.endpoint_geom,
+                    pgr_dijkstra(
+                        'SELECT id, source, target, ST_Length(geom::geography) as cost FROM waterways',
+                        cs.vertex_id,
+                        ev.vertex_id,
+                        directed := false
+                    ) as path_result
+                FROM endpoints_vertices ev, contamination_source cs
+            )
+            SELECT 
+                sp.endpoint_id,
+                sp.name,
+                sp.amenity,
+                sp.school,
+                sp.endpoint_geom,
+                SUM(pr.cost) as total_cost_m,
+                SUM(pr.cost) / 1000.0 / :dispersion_rate as arrival_hours,
+                SUM(pr.cost) / 1000.0 as distance_km
+            FROM shortest_paths sp, unnest(sp.path_result) as pr
+            WHERE pr.aggr_cost >= 0  -- Only include valid paths
+            GROUP BY sp.endpoint_id, sp.name, sp.amenity, sp.school, sp.endpoint_geom
+            HAVING SUM(pr.cost) / 1000.0 / :dispersion_rate <= :time_window
+            ORDER BY arrival_hours
+        """)
+        
+        endpoints_results = self.db.execute(endpoints_query, {
+            "source_vertex": source_vertex,
+            "dispersion_rate": input_data.dispersion_rate_kmph,
+            "time_window": input_data.time_window_hours
+        }).fetchall()
+        
+        # Step 4: Process results and determine risk levels
         risk_results = []
-        for row in results:
+        
+        # Process water intakes
+        for row in water_intakes_results:
+            arrival_hours = float(row.arrival_hours)
+            risk_level = self._determine_risk_level(arrival_hours)
+            
+            risk_results.append(RiskResult(
+                endpoint_id=row.intake_id,
+                endpoint_type="water_intake",
+                arrival_hours=arrival_hours,
+                distance_km=float(row.distance_km),
+                risk_level=risk_level,
+                endpoint_name=row.name or f"Water Intake {row.intake_id}"
+            ))
+        
+        # Process endpoints (schools)
+        for row in endpoints_results:
             arrival_hours = float(row.arrival_hours)
             risk_level = self._determine_risk_level(arrival_hours)
             
             risk_results.append(RiskResult(
                 endpoint_id=row.endpoint_id,
-                endpoint_type=row.endpoint_type,
+                endpoint_type="school",
                 arrival_hours=arrival_hours,
                 distance_km=float(row.distance_km),
-                risk_level=risk_level
+                risk_level=risk_level,
+                endpoint_name=row.name or f"School {row.endpoint_id}"
             ))
         
-        # Step 4: Save contamination event to history
+        # Sort by arrival time
+        risk_results.sort(key=lambda x: x.arrival_hours)
+        
+        # Step 5: Save contamination event to history
         contamination_event = ContaminationEvent(
-            timestamp=datetime.utcnow(),
-            params_json=input_data.dict(),
-            geom=f"POINT({input_data.lon} {input_data.lat})"
+            contamination_point=f"SRID=4326;POINT({input_data.lon} {input_data.lat})",
+            contaminant_type=input_data.contaminant_type,
+            severity_level=input_data.severity_level,
+            description=input_data.description,
+            analysis_results={
+                "total_at_risk": len(risk_results),
+                "water_intakes_at_risk": len([r for r in risk_results if r.endpoint_type == "water_intake"]),
+                "schools_at_risk": len([r for r in risk_results if r.endpoint_type == "school"]),
+                "parameters": input_data.dict()
+            }
         )
         self.db.add(contamination_event)
         self.db.commit()
@@ -145,12 +234,15 @@ class ContaminationAnalysisService:
         query = text("""
             SELECT 
                 id,
-                timestamp,
-                params_json,
-                ST_X(geom) as lon,
-                ST_Y(geom) as lat
+                contamination_time,
+                contaminant_type,
+                severity_level,
+                description,
+                analysis_results,
+                ST_X(contamination_point) as lon,
+                ST_Y(contamination_point) as lat
             FROM contamination_history
-            ORDER BY timestamp DESC
+            ORDER BY contamination_time DESC
             LIMIT :limit
         """)
         
@@ -162,13 +254,19 @@ class ContaminationAnalysisService:
         query = text("""
             SELECT 
                 id,
-                timestamp,
-                params_json,
-                ST_X(geom) as lon,
-                ST_Y(geom) as lat
+                contamination_time,
+                contaminant_type,
+                severity_level,
+                description,
+                analysis_results,
+                ST_X(contamination_point) as lon,
+                ST_Y(contamination_point) as lat
             FROM contamination_history
             WHERE id = :contamination_id
         """)
         
         result = self.db.execute(query, {"contamination_id": contamination_id}).fetchone()
-        return dict(result) if result else None
+        if result:
+            return dict(result)
+        else:
+            return {"error": "Contamination analysis not found"}

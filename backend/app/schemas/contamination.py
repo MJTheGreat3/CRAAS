@@ -6,11 +6,14 @@ class ContaminationInput(BaseModel):
     lon: float
     dispersion_rate_kmph: float
     time_window_hours: int
-    contaminant_type: Optional[str] = None
+    contaminant_type: Optional[str] = "chemical"
+    severity_level: Optional[str] = "medium"
+    description: Optional[str] = None
 
 class RiskResult(BaseModel):
-    endpoint_id: str
+    endpoint_id: int
     endpoint_type: str
+    endpoint_name: Optional[str] = None
     arrival_hours: float
     distance_km: float
     risk_level: str

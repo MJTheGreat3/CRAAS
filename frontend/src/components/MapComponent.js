@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMapEvents } from 'react-leaflet';
 import { Icon, divIcon } from 'leaflet';
 import { Card, Spin, message } from 'antd';
@@ -13,13 +13,23 @@ Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const MapEvents = ({ onContaminationAdd }) => {
+const MapEvents = ({ onContaminationAdd, setCursorCoords }) => {
   useMapEvents({
     click: (e) => {
       const { lat, lng } = e.latlng;
       onContaminationAdd({ lat, lng: lng });
       message.success('Contamination point added. Configure analysis in the panel.');
     },
+    mousemove: (e) => {
+      const { lat, lng } = e.latlng;
+      setCursorCoords({ 
+        lat: lat.toFixed(6), 
+        lng: lng.toFixed(6) 
+      });
+    },
+    mouseout: () => {
+      setCursorCoords({ lat: null, lng: null });
+    }
   });
   return null;
 };
@@ -35,6 +45,7 @@ const MapComponent = ({
 }) => {
   const [mapCenter] = useState([12.9716, 77.5946]); // Default to Bangalore
   const [mapZoom] = useState(10);
+  const [cursorCoords, setCursorCoords] = useState({ lat: null, lng: null });
 
   const getEndpointIcon = (type) => {
     const colors = {
@@ -99,19 +110,29 @@ const MapComponent = ({
   }
 
   return (
-    <MapContainer
-      center={mapCenter}
-      zoom={mapZoom}
-      style={{ height: '100%', width: '100%' }}
-      whenReady={(map) => {
-        if (onBoundsChange) {
-          map.target.on('moveend', () => {
-            const bounds = map.target.getBounds();
-            onBoundsChange(bounds);
-          });
-        }
-      }}
-    >
+    <>
+      {/* Coordinate Display */}
+      <div className="coordinate-display">
+        {cursorCoords.lat && cursorCoords.lng ? (
+          `Lat: ${cursorCoords.lat}, Lng: ${cursorCoords.lng}`
+        ) : (
+          'Move cursor over map'
+        )}
+      </div>
+      
+      <MapContainer
+        center={mapCenter}
+        zoom={mapZoom}
+        style={{ height: '100%', width: '100%' }}
+        whenReady={(map) => {
+          if (onBoundsChange) {
+            map.target.on('moveend', () => {
+              const bounds = map.target.getBounds();
+              onBoundsChange(bounds);
+            });
+          }
+        }}
+      >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -199,8 +220,9 @@ const MapComponent = ({
         );
       })}
       
-      <MapEvents onContaminationAdd={onContaminationAdd} />
+      <MapEvents onContaminationAdd={onContaminationAdd} setCursorCoords={setCursorCoords} />
     </MapContainer>
+    </>
   );
 };
 
