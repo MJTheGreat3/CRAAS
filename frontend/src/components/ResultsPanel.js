@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Card, Table, Tag, Button, Space, Typography, Statistic, Row, Col, Alert, Tooltip } from 'antd';
-import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined } from '@ant-design/icons';
 import { exportToExcel } from '../services/export';
 
 const { Title, Text } = Typography;
 
-const ResultsPanel = ({ results, contaminationPoint }) => {
+const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const [exporting, setExporting] = useState(false);
 
   const getRiskColor = (riskLevel) => {
@@ -128,15 +128,26 @@ const ResultsPanel = ({ results, contaminationPoint }) => {
         }
         size="small"
         extra={
-          <Button
-            type="primary"
-            icon={<DownloadOutlined />}
-            onClick={handleExport}
-            loading={exporting}
-            size="small"
-          >
-            Export Excel
-          </Button>
+          <Space>
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              onClick={handleExport}
+              loading={exporting}
+              size="small"
+            >
+              Export Excel
+            </Button>
+            <Button
+              danger
+              icon={<CloseOutlined />}
+              onClick={onClose}
+              size="small"
+              title="Close results and clear analysis"
+            >
+              Close
+            </Button>
+          </Space>
         }
       >
         {/* Summary Statistics */}

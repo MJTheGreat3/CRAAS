@@ -82,6 +82,7 @@ function App() {
           <ResultsPanel
             results={analysisResults}
             contaminationPoint={contaminationPoints[0]}
+            onClose={handleClearAnalysis}
           />
         )}
       </Content>
