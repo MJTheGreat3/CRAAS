@@ -13,13 +13,13 @@ class HydrologyService:
             try:
                 min_lon, min_lat, max_lon, max_lat = map(float, bounds.split(','))
                 query = text("""
-                    SELECT 
+                    SELECT
                         id,
                         source,
                         target,
-                        length_m,
+                        ST_Length(geom::geography) as length_m,
                         ST_AsGeoJSON(geom) as geometry
-                    FROM hydro_lines
+                    FROM waterways
                     WHERE ST_Intersects(
                         geom,
                         ST_MakeEnvelope(:min_lon, :min_lat, :max_lon, :max_lat, 4326)
@@ -36,35 +36,35 @@ class HydrologyService:
         else:
             # Get all network data (limit for performance)
             query = text("""
-                SELECT 
+                SELECT
                     id,
                     source,
                     target,
-                    length_m,
+                    ST_Length(geom::geography) as length_m,
                     ST_AsGeoJSON(geom) as geometry
-                FROM hydro_lines
+                FROM waterways
                 LIMIT 10000
             """)
             results = self.db.execute(query).fetchall()
-        
-        return [dict(row) for row in results]
+
+        return [row._asdict() for row in results]
     
     async def snap_point_to_network(self, lat: float, lon: float) -> Dict[str, Any]:
         """Snap a point to the nearest hydrology network line."""
         query = text("""
-            SELECT 
+            SELECT
                 id as line_id,
                 ST_AsGeoJSON(ST_ClosestPoint(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))) as snapped_point,
-                ST_Distance(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) as distance_m,
+                ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m,
                 ST_AsGeoJSON(geom) as line_geometry
-            FROM hydro_lines
+            FROM waterways
             ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
             LIMIT 1
         """)
-        
+
         result = self.db.execute(query, {"lat": lat, "lon": lon}).fetchone()
-        
+
         if not result:
             raise ValueError("No hydrology network found near the specified point")
-        
+
         return dict(result)

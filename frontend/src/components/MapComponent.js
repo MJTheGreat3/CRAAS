@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMapEvents } from 'react-leaflet';
-import { Icon, divIcon } from 'leaflet';
-import { Card, Spin, message } from 'antd';
+import { Icon, divIcon, marker as leafletMarker } from 'leaflet';
+import { Spin, message } from 'antd';
 import 'leaflet/dist/leaflet.css';
 import './MapComponent.css';
 
@@ -173,11 +173,11 @@ const MapComponent = ({
               geometry: JSON.parse(endpoint.geometry)
             }))
           }}
-          pointToLayer={(feature, latlng) => {
-            return new Marker(latlng, {
-              icon: getEndpointIcon(feature.properties.endpoint_type)
-            });
-          }}
+           pointToLayer={(feature, latlng) => {
+             return leafletMarker(latlng, {
+               icon: getEndpointIcon(feature.properties.endpoint_type)
+             });
+           }}
           onEachFeature={onEachEndpoint}
         />
       )}

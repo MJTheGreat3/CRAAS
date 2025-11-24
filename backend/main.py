@@ -19,9 +19,9 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(contamination.router, prefix="/api/v1", tags=["contamination"])
-app.include_router(hydrology.router, prefix="/api/v1", tags=["hydrology"])
-app.include_router(endpoints.router, prefix="/api/v1", tags=["endpoints"])
+app.include_router(contamination.router, prefix="/api/v1/contamination", tags=["contamination"])
+app.include_router(hydrology.router, prefix="/api/v1/hydrology", tags=["hydrology"])
+app.include_router(endpoints.router, prefix="/api/v1/endpoints", tags=["endpoints"])
 
 @app.get("/")
 async def root():
