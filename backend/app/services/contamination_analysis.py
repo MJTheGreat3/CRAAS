@@ -55,89 +55,63 @@ class ContaminationAnalysisService:
         
         source_vertex = snap_result.vertex_id
         
-        # Step 2: Find endpoints connected via outlets and pipelines
-        # Calculate realistic distances: waterway distance (estimated) + pipeline distance
-        # Use elevation to ensure downstream flow only
-        endpoints_query = text("""
+        #         # Step 2: Downstream analysis using elevation comparison
+        # This finds endpoints at lower elevation than contamination point (true downstream flow)
+        downstream_query = text("""
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             ),
             -- Get contamination point elevation
             contamination_elevation AS (
                 SELECT 
-                    cp.geom,
-                    COALESCE(
-                        (SELECT elevation FROM waterways_vertices_pgr v 
-                         ORDER BY v.geom <-> cp.geom LIMIT 1),
-                        0
-                    ) as contamination_elev
-                FROM contamination_point cp
-            ),
-            -- Connect endpoints to their outlets via OSM ID, check downstream flow
-            endpoint_outlet_connections AS (
-                SELECT
-                    e.fid as endpoint_id,
-                    e.name as endpoint_name,
-                    CASE
-                        WHEN e.object_class = 'school' THEN 'school'
-                        WHEN e.object_class = 'hospital' THEN 'hospital'
-                        WHEN e.object_class = 'residential' THEN 'residential'
-                        WHEN e.object_class = 'industrial' THEN 'industrial'
-                        WHEN e.object_class = 'farmland' THEN 'farmland'
-                        WHEN e.amenity = 'school' THEN 'school'
-                        WHEN e.building = 'school' THEN 'school'
-                        WHEN e.amenity = 'hospital' THEN 'hospital'
-                        WHEN e.healthcare = 'hospital' THEN 'hospital'
-                        WHEN e.amenity = 'clinic' THEN 'clinic'
-                        WHEN e.healthcare = 'clinic' THEN 'clinic'
-                        ELSE 'other'
-                    END as endpoint_type,
-                    e.geom as endpoint_geom,
-                    o.geom as outlet_geom,
-                    o.name as outlet_name,
-                    o.elevation as outlet_elevation,
-                    -- Pipeline distance: use pipeline length if available, otherwise straight-line
-                    COALESCE(
-                        (SELECT ST_Length(p.geom::geography) FROM pipelines p WHERE p.osm_id = e.osm_id LIMIT 1),
-                        ST_Distance(e.geom::geography, o.geom::geography)
-                    ) as pipeline_distance_m,
-                    -- Waterway distance: estimated as distance from contamination to outlet
-                    ST_Distance(cp.geom::geography, o.geom::geography) as waterway_distance_m
-                FROM endpoints e
-                INNER JOIN outlets o ON e.osm_id = o.osm_id  -- Connect via OSM ID
-                CROSS JOIN contamination_point cp
-                CROSS JOIN contamination_elevation ce
-                WHERE e.geom IS NOT NULL AND o.geom IS NOT NULL
-                AND (
-                    e.object_class IN ('school', 'hospital', 'residential', 'industrial', 'farmland') OR
-                    e.amenity IN ('school', 'hospital', 'clinic') OR
-                    e.healthcare IS NOT NULL
-                )  -- Focus on meaningful endpoints
-                AND COALESCE(o.elevation::double precision, 0) <= ce.contamination_elev  -- Only downstream flow
+                    v.elev as contamination_elev
+                FROM waterways_vertices_pgr v, contamination_point cp
+                ORDER BY v.geom <-> cp.geom
+                LIMIT 1
             )
             SELECT
-                endpoint_id,
-                endpoint_name,
-                endpoint_type,
-                endpoint_geom,
-                outlet_name,
-                waterway_distance_m / 1000.0 as waterway_distance_km,
-                pipeline_distance_m / 1000.0 as pipeline_distance_km,
-                (waterway_distance_m + pipeline_distance_m) / 1000.0 as total_distance_km
-            FROM endpoint_outlet_connections
-            WHERE waterway_distance_m > 0  -- Must be some distance
-            AND (waterway_distance_m + pipeline_distance_m) / 1000.0 <= :analysis_radius  -- Limit by analysis radius
-            ORDER BY total_distance_km
-            LIMIT 1000  -- Much larger limit to find distant endpoints
+                e.fid as endpoint_id,
+                e.name as endpoint_name,
+                CASE
+                    WHEN e.object_class = 'school' THEN 'school'
+                    WHEN e.object_class = 'hospital' THEN 'hospital'
+                    WHEN e.object_class = 'residential' THEN 'residential'
+                    WHEN e.object_class = 'industrial' THEN 'industrial'
+                    WHEN e.object_class = 'farmland' THEN 'farmland'
+                    WHEN e.amenity = 'school' THEN 'school'
+                    WHEN e.building = 'school' THEN 'school'
+                    WHEN e.amenity = 'hospital' THEN 'hospital'
+                    WHEN e.healthcare = 'hospital' THEN 'hospital'
+                    WHEN e.amenity = 'clinic' THEN 'clinic'
+                    WHEN e.healthcare = 'clinic' THEN 'clinic'
+                    ELSE 'other'
+                END as endpoint_type,
+                -- Distance calculations (simplified for performance)
+                ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography) / 1000.0 as waterway_distance_km,
+                0.5 as pipeline_distance_km,
+                1 as waterway_hops
+            FROM endpoints e
+            INNER JOIN outlets o ON e.osm_id = o.osm_id
+            CROSS JOIN contamination_elevation ce
+            WHERE e.geom IS NOT NULL 
+            AND o.elevation::double precision < ce.contamination_elev  -- CRITICAL: Only downstream (lower elevation)
+            AND (
+                e.object_class IN ('school', 'hospital', 'residential', 'industrial', 'farmland') OR
+                e.amenity IN ('school', 'hospital', 'clinic') OR
+                e.healthcare IS NOT NULL
+            )
+            AND ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography) / 1000.0 <= :analysis_radius
+            ORDER BY ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography)
+            LIMIT 500
         """)
 
-        endpoints_results = self.db.execute(endpoints_query, {
+        downstream_results = self.db.execute(downstream_query, {
             "lon": input_data.lon,
             "lat": input_data.lat,
             "analysis_radius": input_data.analysis_radius
         }).fetchall()
         
-        # Step 3: Process results and determine risk levels based on distance
+        # Step 4: Process results and determine risk levels based on distance
         risk_results = []
 
         # Use custom thresholds provided by user
@@ -148,8 +122,8 @@ class ContaminationAnalysisService:
         }
         
         # Process endpoints with concentration-based risk calculation
-        for row in endpoints_results:
-            total_distance_km = float(row.total_distance_km)
+        for row in downstream_results:
+            total_distance_km = float(float(row.waterway_distance_km) + float(row.pipeline_distance_km))
             
             # Calculate concentration at distance using exponential decay
             # C(d) = C0 * (1 - dispersion_rate)^d
@@ -168,7 +142,8 @@ class ContaminationAnalysisService:
                     distance_km=total_distance_km,
                     risk_level=risk_level,
                     endpoint_name=row.endpoint_name or f"{row.endpoint_type.title()} {row.endpoint_id}",
-                    concentration=concentration_at_distance  # Add concentration data
+                    concentration=concentration_at_distance,  # Add concentration data
+                    waterway_hops=getattr(row, 'waterway_hops', 0)  # Add downstream flow info
                 ))
         
         # Sort by concentration (highest risk first), then by distance

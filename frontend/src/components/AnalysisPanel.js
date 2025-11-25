@@ -60,14 +60,14 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
         }
         size="small"
         style={{ 
-          width: 380,
+          width: 320,
           height: minimized ? 'auto' : '75vh',
           overflow: 'hidden'
         }}
         bodyStyle={{
           height: minimized ? 'auto' : 'calc(75vh - 57px)',
           overflowY: 'auto',
-          padding: '12px'
+          padding: '10px'
         }}
         extra={
           <Button
@@ -160,7 +160,7 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
 
           <Form.Item 
             label="Risk Thresholds (%)"
-            style={{ marginBottom: '12px' }}
+            style={{ marginBottom: '8px' }}
           >
             <Row gutter={4}>
               <Col span={8}>
@@ -229,11 +229,11 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
               description={error}
               type="error"
               showIcon
-              style={{ marginBottom: 16 }}
+            style={{ marginBottom: 12 }}
             />
           )}
 
-          <Form.Item style={{ marginBottom: '8px' }}>
+          <Form.Item style={{ marginBottom: '6px' }}>
             <Space.Compact style={{ width: '100%' }}>
               <Button
                 type="primary"
@@ -262,32 +262,7 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
           </Form.Item>
         </Form>
 
-        <div style={{ marginTop: 8, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
-          <Title level={5} style={{ marginBottom: 8 }}>Risk Colors:</Title>
-          <Row gutter={[8, 4]}>
-            <Col span={8}>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-                <div style={{ width: 8, height: 8, backgroundColor: '#ff4d4f', borderRadius: '50%', marginRight: 4 }}></div>
-                <Text strong>High:</Text> <Text>≥10%</Text>
-              </div>
-            </Col>
-            <Col span={8}>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-                <div style={{ width: 8, height: 8, backgroundColor: '#fadb14', borderRadius: '50%', marginRight: 4 }}></div>
-                <Text strong>Moderate:</Text> <Text>5-10%</Text>
-              </div>
-            </Col>
-            <Col span={8}>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
-                <div style={{ width: 8, height: 8, backgroundColor: '#52c41a', borderRadius: '50%', marginRight: 4 }}></div>
-                <Text strong>Low:</Text> <Text>1-5%</Text>
-              </div>
-            </Col>
-          </Row>
-          <div style={{ marginTop: 6, fontSize: '10px', color: '#666', textAlign: 'center' }}>
-            <Text strong style={{ color: '#1890ff' }}>🌊 Downstream Flow</Text> • Compound Decay
-          </div>
-        </div>
+
           </>
         )}
       </Card>

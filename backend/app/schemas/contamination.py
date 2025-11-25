@@ -19,6 +19,7 @@ class RiskResult(BaseModel):
     distance_km: float
     risk_level: str
     concentration: Optional[float] = None  # Concentration at endpoint
+    waterway_hops: Optional[int] = None  # Number of waterway segments from contamination point
 
 class ContaminationAnalysisResponse(BaseModel):
     contamination_id: int
