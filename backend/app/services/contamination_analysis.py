@@ -55,37 +55,65 @@ class ContaminationAnalysisService:
         
         source_vertex = snap_result.vertex_id
         
-        # Step 2: Find endpoints near the contamination source using straight-line distance
-        # This is a simplified approach for initial functionality - can be enhanced with network routing later
+        # Step 2: Find endpoints connected via outlets and pipelines
+        # Calculate realistic distances: waterway distance (estimated) + pipeline distance
         endpoints_query = text("""
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
+            ),
+            -- Connect endpoints to their outlets via OSM ID
+            endpoint_outlet_connections AS (
+                SELECT
+                    e.fid as endpoint_id,
+                    e.name as endpoint_name,
+                    CASE
+                        WHEN e.object_class = 'school' THEN 'school'
+                        WHEN e.object_class = 'hospital' THEN 'hospital'
+                        WHEN e.object_class = 'residential' THEN 'residential'
+                        WHEN e.object_class = 'industrial' THEN 'industrial'
+                        WHEN e.object_class = 'farmland' THEN 'farmland'
+                        WHEN e.amenity = 'school' THEN 'school'
+                        WHEN e.building = 'school' THEN 'school'
+                        WHEN e.amenity = 'hospital' THEN 'hospital'
+                        WHEN e.healthcare = 'hospital' THEN 'hospital'
+                        WHEN e.amenity = 'clinic' THEN 'clinic'
+                        WHEN e.healthcare = 'clinic' THEN 'clinic'
+                        ELSE 'other'
+                    END as endpoint_type,
+                    e.geom as endpoint_geom,
+                    o.geom as outlet_geom,
+                    o.name as outlet_name,
+                    -- Pipeline distance: use pipeline length if available, otherwise straight-line
+                    COALESCE(
+                        (SELECT ST_Length(p.geom::geography) FROM pipelines p WHERE p.osm_id = e.osm_id LIMIT 1),
+                        ST_Distance(e.geom::geography, o.geom::geography)
+                    ) as pipeline_distance_m,
+                    -- Waterway distance: estimated as distance from contamination to outlet
+                    ST_Distance(cp.geom::geography, o.geom::geography) as waterway_distance_m
+                FROM endpoints e
+                INNER JOIN outlets o ON e.osm_id = o.osm_id  -- Connect via OSM ID
+                CROSS JOIN contamination_point cp
+                WHERE e.geom IS NOT NULL AND o.geom IS NOT NULL
+                AND (
+                    e.object_class IN ('school', 'hospital', 'residential', 'industrial', 'farmland') OR
+                    e.amenity IN ('school', 'hospital', 'clinic') OR
+                    e.healthcare IS NOT NULL
+                )  -- Focus on meaningful endpoints
             )
             SELECT
-                e.fid as endpoint_id,
-                e.name,
-                CASE
-                    WHEN e.object_class = 'school' THEN 'school'
-                    WHEN e.object_class = 'hospital' THEN 'hospital'
-                    WHEN e.object_class = 'residential' THEN 'residential'
-                    WHEN e.object_class = 'industrial' THEN 'industrial'
-                    WHEN e.object_class = 'farmland' THEN 'farmland'
-                    WHEN e.amenity = 'school' THEN 'school'
-                    WHEN e.building = 'school' THEN 'school'
-                    WHEN e.amenity = 'hospital' THEN 'hospital'
-                    WHEN e.healthcare = 'hospital' THEN 'hospital'
-                    WHEN e.amenity = 'clinic' THEN 'clinic'
-                    WHEN e.healthcare = 'clinic' THEN 'clinic'
-                    ELSE 'other'
-                END as endpoint_type,
-                e.geom as endpoint_geom,
-                ST_Distance(e.geom::geography, cp.geom::geography) as distance_m,
-                ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0 as distance_km,
-                (ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0) / :dispersion_rate as arrival_hours
-            FROM endpoints e, contamination_point cp
-            WHERE e.geom IS NOT NULL
-            AND (ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0) / :dispersion_rate <= :time_window
-            ORDER BY ST_Distance(e.geom::geography, cp.geom::geography)
+                endpoint_id,
+                endpoint_name,
+                endpoint_type,
+                endpoint_geom,
+                outlet_name,
+                waterway_distance_m / 1000.0 as waterway_distance_km,
+                pipeline_distance_m / 1000.0 as pipeline_distance_km,
+                (waterway_distance_m + pipeline_distance_m) / 1000.0 as total_distance_km,
+                ((waterway_distance_m + pipeline_distance_m) / 1000.0) / :dispersion_rate as arrival_hours
+            FROM endpoint_outlet_connections
+            WHERE waterway_distance_m > 0  -- Must be some distance
+            AND ((waterway_distance_m + pipeline_distance_m) / 1000.0) / :dispersion_rate <= :time_window
+            ORDER BY arrival_hours
             LIMIT 50  -- Limit results for performance
         """)
 
@@ -108,9 +136,9 @@ class ContaminationAnalysisService:
                 endpoint_id=int(row.endpoint_id),
                 endpoint_type=row.endpoint_type,
                 arrival_hours=arrival_hours,
-                distance_km=float(row.distance_km),
+                distance_km=float(row.total_distance_km),
                 risk_level=risk_level,
-                endpoint_name=row.name or f"{row.endpoint_type.title()} {row.endpoint_id}"
+                endpoint_name=row.endpoint_name or f"{row.endpoint_type.title()} {row.endpoint_id}"
             ))
         
         # Sort by arrival time
