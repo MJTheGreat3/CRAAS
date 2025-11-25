@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMapEvents } from 'react-leaflet';
 import { Icon, divIcon, marker as leafletMarker } from 'leaflet';
 import { Spin, message } from 'antd';
+import { 
+  MedicineBoxOutlined, 
+  BookOutlined, 
+  FieldTimeOutlined, 
+  HomeOutlined, 
+  BuildOutlined, 
+  EnvironmentOutlined,
+  ClockCircleOutlined
+} from '@ant-design/icons';
 import 'leaflet/dist/leaflet.css';
 import './MapComponent.css';
 
@@ -49,19 +58,45 @@ const MapComponent = ({
 
   const getEndpointIcon = (type) => {
     const colors = {
-      hospital: '#1890ff',
-      school: '#52c41a',
-      farmland: '#faad14',
-      residential: '#722ed1',
-      industrial: '#f5222d',
-      other: '#666666'
+      hospital: '#ff4d4f',
+      school: '#1890ff',
+      farmland: '#52c41a',
+      residential: '#fa8c16',
+      industrial: '#666666',
+      other: '#999999'
+    };
+
+    const icons = {
+      hospital: 'H',
+      school: 'S',
+      farmland: 'F',
+      residential: 'R',
+      industrial: 'I',
+      other: '•'
     };
     
     return divIcon({
       className: `endpoint-marker endpoint-${type}`,
-      html: `<div style="background-color: ${colors[type] || '#666'}; width: 10px; height: 10px; border-radius: 50%; border: 2px solid white;"></div>`,
-      iconSize: [14, 14],
-      iconAnchor: [7, 7]
+      html: `
+        <div style="
+          background-color: ${colors[type] || '#999'}; 
+          width: 24px; 
+          height: 24px; 
+          border-radius: 50%; 
+          border: 2px solid white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: bold;
+          color: white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        ">
+          ${icons[type] || '📍'}
+        </div>
+      `,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
     });
   };
 
@@ -74,18 +109,45 @@ const MapComponent = ({
     });
   };
 
-  const getRiskIcon = (riskLevel) => {
+  const getRiskIcon = (riskLevel, endpointType) => {
     const colors = {
       High: '#ff4d4f',
-      Moderate: '#fa8c16',
-      Low: '#fadb14'
+      Moderate: '#fadb14',
+      Low: '#52c41a'
+    };
+
+    const endpointIcons = {
+      hospital: 'H',
+      school: 'S',
+      farmland: 'F',
+      residential: 'R',
+      industrial: 'I',
+      other: '•'
     };
     
     return divIcon({
       className: `risk-marker risk-${riskLevel.toLowerCase()}`,
-      html: `<div style="background-color: ${colors[riskLevel]}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white;"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9]
+      html: `
+        <div style="
+          background-color: ${colors[riskLevel]}; 
+          width: 28px; 
+          height: 28px; 
+          border-radius: 50%; 
+          border:3px solid white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: bold;
+          color: white;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+          animation: pulse 2s infinite;
+        ">
+          ${endpointIcons[endpointType] || '•'}
+        </div>
+      `,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
     });
   };
 
@@ -213,7 +275,7 @@ const MapComponent = ({
             <Marker
               key={`risk-${index}`}
               position={[coords[1], coords[0]]}
-              icon={getRiskIcon(result.risk_level)}
+              icon={getRiskIcon(result.risk_level, result.endpoint_type)}
             >
               <Popup>
                 <strong>{result.endpoint_type.toUpperCase()} AT RISK</strong><br/>

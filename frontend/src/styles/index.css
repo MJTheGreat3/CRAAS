@@ -31,7 +31,60 @@ code {
 }
 
 .endpoint-hospital {
+  background-color: #ff4d4f;
+}
+
+.endpoint-school {
   background-color: #1890ff;
+}
+
+.endpoint-farmland {
+  background-color: #52c41a;
+}
+
+.endpoint-residential {
+  background-color: #fa8c16;
+}
+
+.endpoint-industrial {
+  background-color: #666666;
+}
+
+.endpoint-other {
+  background-color: #999999;
+}
+
+/* Risk marker animations */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.risk-marker {
+  animation: pulse 2s infinite;
+}
+
+/* Risk level colors */
+.risk-high {
+  background-color: #ff4d4f !important;
+}
+
+.risk-moderate {
+  background-color: #fadb14 !important;
+}
+
+.risk-low {
+  background-color: #52c41a !important;
 }
 
 .endpoint-school {

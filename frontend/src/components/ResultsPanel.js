@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
-import { Card, Table, Tag, Button, Space, Typography, Statistic, Row, Col, Alert, Tooltip } from 'antd';
-import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined, ExpandOutlined, CompressOutlined, PlusOutlined, MinusOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Button, Space, Typography, Statistic, Row, Col, Alert } from 'antd';
+import { 
+  DownloadOutlined, 
+  InfoCircleOutlined,
+  ExclamationCircleOutlined,
+  CloseOutlined, 
+  ExpandOutlined, 
+  CompressOutlined, 
+  PlusOutlined, 
+  MinusOutlined,
+  MedicineBoxOutlined,
+  BookOutlined,
+  FieldTimeOutlined,
+  HomeOutlined,
+  BuildOutlined,
+  EnvironmentOutlined
+} from '@ant-design/icons';
 import { exportToExcel } from '../services/export';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const [exporting, setExporting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [minimized, setMinimized] = useState(false);
 
-  const getRiskColor = (riskLevel) => {
-    const colors = {
-      High: 'red',
-      Moderate: 'orange',
-      Low: 'gold'
-    };
-    return colors[riskLevel] || 'default';
-  };
+
 
   const getEndpointIcon = (type) => {
-    const icons = {
-      hospital: '🏥',
-      school: '🏫',
-      farmland: '🌾',
-      residential: '🏘️',
-      industrial: '🏭',
-      other: '📍'
+    const iconConfig = {
+      hospital: { icon: <MedicineBoxOutlined />, color: '#ff4d4f' },
+      school: { icon: <BookOutlined />, color: '#1890ff' },
+      farmland: { icon: <FieldTimeOutlined />, color: '#52c41a' },
+      residential: { icon: <HomeOutlined />, color: '#fa8c16' },
+      industrial: { icon: <BuildOutlined />, color: '#666666' },
+      other: { icon: <EnvironmentOutlined />, color: '#999999' }
     };
-    return icons[type] || '📍';
+    return iconConfig[type] || iconConfig.other;
   };
 
   const handleExport = async () => {
@@ -48,12 +56,15 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
       dataIndex: 'endpoint_type',
       key: 'endpoint_type',
       width: 100,
-      render: (type) => (
-        <Space>
-          <span>{getEndpointIcon(type)}</span>
-          <Text strong>{type.toUpperCase()}</Text>
-        </Space>
-      ),
+      render: (type) => {
+        const iconConfig = getEndpointIcon(type);
+        return (
+          <Space>
+            <span style={{ color: iconConfig.color }}>{iconConfig.icon}</span>
+            <Text strong>{type.toUpperCase()}</Text>
+          </Space>
+        );
+      },
       filters: [
         { text: 'Hospital', value: 'hospital' },
         { text: 'School', value: 'school' },
@@ -76,27 +87,34 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
       dataIndex: 'risk_level',
       key: 'risk_level',
       width: 100,
-      render: (risk) => (
-        <Tag color={getRiskColor(risk)}>
-          {risk}
-        </Tag>
-      ),
+      render: (risk) => {
+        const riskColors = {
+          High: 'red',
+          Moderate: 'gold',
+          Low: 'green'
+        };
+        return (
+          <Tag color={riskColors[risk]}>
+            {risk}
+          </Tag>
+        );
+      },
       sorter: (a, b) => {
         const order = { High: 3, Moderate: 2, Low: 1 };
         return order[a.risk_level] - order[b.risk_level];
       },
     },
     {
-      title: 'Arrival Time',
-      dataIndex: 'arrival_hours',
-      key: 'arrival_hours',
-      width: 120,
-      render: (hours) => (
-        <Tooltip title={`Exact arrival: ${hours.toFixed(2)} hours`}>
-          <Text strong>{hours.toFixed(1)} hrs</Text>
-        </Tooltip>
+      title: 'Concentration',
+      dataIndex: 'concentration',
+      key: 'concentration',
+      width: 100,
+      render: (conc) => (
+        <span>
+          {conc ? conc.toFixed(1) + '%' : 'N/A'}
+        </span>
       ),
-      sorter: (a, b) => a.arrival_hours - b.arrival_hours,
+      sorter: (a, b) => (a.concentration || 0) - (b.concentration || 0),
     },
     {
       title: 'Distance',
@@ -118,7 +136,7 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
     const highRisk = results.results.filter(r => r.risk_level === 'High');
     if (highRisk.length === 0) return null;
     
-    return highRisk.sort((a, b) => a.arrival_hours - b.arrival_hours)[0];
+    return highRisk.sort((a, b) => (b.concentration || 0) - (a.concentration || 0))[0];
   };
 
   const mostCritical = getMostCritical();
@@ -215,8 +233,8 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
                 description={
                   <span>
                     <strong>{mostCritical.endpoint_type.toUpperCase()}</strong> at location{' '}
-                    <strong>{mostCritical.endpoint_id}</strong> will be contaminated in{' '}
-                    <strong>{mostCritical.arrival_hours.toFixed(1)} hours</strong> - Immediate action required!
+                    <strong>{mostCritical.endpoint_id}</strong> has{' '}
+                    <strong>{(mostCritical.concentration || 0).toFixed(1)}% concentration</strong> - Immediate action required!
                   </span>
                 }
                 type="error"

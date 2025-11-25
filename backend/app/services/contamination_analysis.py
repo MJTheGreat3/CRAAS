@@ -57,11 +57,23 @@ class ContaminationAnalysisService:
         
         # Step 2: Find endpoints connected via outlets and pipelines
         # Calculate realistic distances: waterway distance (estimated) + pipeline distance
+        # Use elevation to ensure downstream flow only
         endpoints_query = text("""
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             ),
-            -- Connect endpoints to their outlets via OSM ID
+            -- Get contamination point elevation
+            contamination_elevation AS (
+                SELECT 
+                    cp.geom,
+                    COALESCE(
+                        (SELECT elevation FROM waterways_vertices_pgr v 
+                         ORDER BY v.geom <-> cp.geom LIMIT 1),
+                        0
+                    ) as contamination_elev
+                FROM contamination_point cp
+            ),
+            -- Connect endpoints to their outlets via OSM ID, check downstream flow
             endpoint_outlet_connections AS (
                 SELECT
                     e.fid as endpoint_id,
@@ -83,6 +95,7 @@ class ContaminationAnalysisService:
                     e.geom as endpoint_geom,
                     o.geom as outlet_geom,
                     o.name as outlet_name,
+                    o.elevation as outlet_elevation,
                     -- Pipeline distance: use pipeline length if available, otherwise straight-line
                     COALESCE(
                         (SELECT ST_Length(p.geom::geography) FROM pipelines p WHERE p.osm_id = e.osm_id LIMIT 1),
@@ -93,12 +106,14 @@ class ContaminationAnalysisService:
                 FROM endpoints e
                 INNER JOIN outlets o ON e.osm_id = o.osm_id  -- Connect via OSM ID
                 CROSS JOIN contamination_point cp
+                CROSS JOIN contamination_elevation ce
                 WHERE e.geom IS NOT NULL AND o.geom IS NOT NULL
                 AND (
                     e.object_class IN ('school', 'hospital', 'residential', 'industrial', 'farmland') OR
                     e.amenity IN ('school', 'hospital', 'clinic') OR
                     e.healthcare IS NOT NULL
                 )  -- Focus on meaningful endpoints
+                AND COALESCE(o.elevation::double precision, 0) <= ce.contamination_elev  -- Only downstream flow
             )
             SELECT
                 endpoint_id,
@@ -108,53 +123,73 @@ class ContaminationAnalysisService:
                 outlet_name,
                 waterway_distance_m / 1000.0 as waterway_distance_km,
                 pipeline_distance_m / 1000.0 as pipeline_distance_km,
-                (waterway_distance_m + pipeline_distance_m) / 1000.0 as total_distance_km,
-                ((waterway_distance_m + pipeline_distance_m) / 1000.0) / :dispersion_rate as arrival_hours
+                (waterway_distance_m + pipeline_distance_m) / 1000.0 as total_distance_km
             FROM endpoint_outlet_connections
             WHERE waterway_distance_m > 0  -- Must be some distance
-            AND ((waterway_distance_m + pipeline_distance_m) / 1000.0) / :dispersion_rate <= :time_window
-            ORDER BY arrival_hours
-            LIMIT 50  -- Limit results for performance
+            AND (waterway_distance_m + pipeline_distance_m) / 1000.0 <= :analysis_radius  -- Limit by analysis radius
+            ORDER BY total_distance_km
+            LIMIT 1000  -- Much larger limit to find distant endpoints
         """)
 
         endpoints_results = self.db.execute(endpoints_query, {
             "lon": input_data.lon,
             "lat": input_data.lat,
-            "dispersion_rate": input_data.dispersion_rate_kmph,
-            "time_window": input_data.time_window_hours
+            "analysis_radius": input_data.analysis_radius
         }).fetchall()
         
-        # Step 3: Process results and determine risk levels
+        # Step 3: Process results and determine risk levels based on distance
         risk_results = []
 
-        # Process endpoints
-        for row in endpoints_results:
-            arrival_hours = float(row.arrival_hours)
-            risk_level = self._determine_risk_level(arrival_hours)
-
-            risk_results.append(RiskResult(
-                endpoint_id=int(row.endpoint_id),
-                endpoint_type=row.endpoint_type,
-                arrival_hours=arrival_hours,
-                distance_km=float(row.total_distance_km),
-                risk_level=risk_level,
-                endpoint_name=row.endpoint_name or f"{row.endpoint_type.title()} {row.endpoint_id}"
-            ))
+        # Use custom thresholds provided by user, with fallback to defaults
+        thresholds = {
+            'high': input_data.high_threshold,
+            'moderate': input_data.moderate_threshold, 
+            'low': input_data.low_threshold
+        }
         
-        # Sort by arrival time
-        risk_results.sort(key=lambda x: x.arrival_hours)
+        # Process endpoints with concentration-based risk calculation
+        for row in endpoints_results:
+            total_distance_km = float(row.total_distance_km)
+            
+            # Calculate concentration at distance using exponential decay
+            # C(d) = C0 * (1 - dispersion_rate)^d
+            # Where C0 = 100% (initial concentration), d = distance in km
+            concentration_at_distance = 100.0 * ((1.0 - input_data.dispersion_rate) ** total_distance_km)
+            
+            # Determine risk level based on concentration
+            risk_level = self._determine_risk_by_concentration(concentration_at_distance, thresholds)
+            
+            # Only include endpoints with measurable risk
+            if risk_level and risk_level != "Safe":
+                risk_results.append(RiskResult(
+                    endpoint_id=int(row.endpoint_id),
+                    endpoint_type=row.endpoint_type,
+                    arrival_hours=0,  # Legacy field - not used in concentration model
+                    distance_km=total_distance_km,
+                    risk_level=risk_level,
+                    endpoint_name=row.endpoint_name or f"{row.endpoint_type.title()} {row.endpoint_id}",
+                    concentration=concentration_at_distance  # Add concentration data
+                ))
+        
+        # Sort by concentration (highest risk first), then by distance
+        risk_results.sort(key=lambda x: (-x.concentration or 0, x.distance_km))
         
         # Step 5: Save contamination event to history
         contamination_event = ContaminationEvent(
             contamination_point=f"SRID=4326;POINT({input_data.lon} {input_data.lat})",
             contaminant_type=input_data.contaminant_type,
-            severity_level=input_data.severity_level,
-            description=input_data.description,
+            severity_level="medium",  # Default since not used in new model
+            description=None,  # Not used in new model
             analysis_results={
                 "total_at_risk": len(risk_results),
                 "water_intakes_at_risk": len([r for r in risk_results if r.endpoint_type == "water_intake"]),
                 "schools_at_risk": len([r for r in risk_results if r.endpoint_type == "school"]),
-                "parameters": input_data.dict()
+                "parameters": {
+                    "lat": input_data.lat,
+                    "lon": input_data.lon,
+                    "dispersion_rate": input_data.dispersion_rate,
+                    "contaminant_type": input_data.contaminant_type
+                }
             }
         )
         self.db.add(contamination_event)
@@ -170,14 +205,16 @@ class ContaminationAnalysisService:
             analysis_time_seconds=analysis_time
         )
     
-    def _determine_risk_level(self, arrival_hours: float) -> str:
-        """Determine risk level based on arrival time."""
-        if arrival_hours < 6:
+    def _determine_risk_by_concentration(self, concentration: float, thresholds: dict) -> str:
+        """Determine risk level based on contaminant concentration."""
+        if concentration >= thresholds['high']:
             return "High"
-        elif arrival_hours <= 24:
+        elif concentration >= thresholds['moderate']:
             return "Moderate"
-        else:
+        elif concentration >= thresholds['low']:
             return "Low"
+        else:
+            return "Safe"  # Below safe threshold
     
     async def get_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get historical contamination analysis results."""
