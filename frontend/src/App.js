@@ -12,6 +12,7 @@ const { Title } = Typography;
 function App() {
   const [hydrologyData, setHydrologyData] = useState([]);
   const [endpointsData, setEndpointsData] = useState([]);
+  const [endpointsLoaded, setEndpointsLoaded] = useState(false);
   const [contaminationPoints, setContaminationPoints] = useState([]);
   const [analysisResults, setAnalysisResults] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -30,6 +31,7 @@ function App() {
       ]);
       setHydrologyData(hydrology);
       setEndpointsData(endpoints);
+      setEndpointsLoaded(true);
     } catch (error) {
       notification.error({
         message: 'Data Loading Error',
@@ -40,8 +42,12 @@ function App() {
     }
   };
 
+
+
   const handleContaminationAdd = (point) => {
+    console.log('Contamination point added:', point);
     setContaminationPoints([point]); // Only allow one contamination point at a time
+    console.log('Contamination points array:', [point]);
   };
 
   const handleAnalysisComplete = (results) => {

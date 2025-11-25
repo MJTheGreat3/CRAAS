@@ -57,7 +57,12 @@ export const getEndpoints = async (endpointType = null, bounds = null) => {
     if (endpointType) params.endpoint_type = endpointType;
     if (bounds) params.bounds = bounds;
     
+    console.log('Making API call to /endpoints/', params);
     const response = await api.get('/endpoints/', { params });
+    console.log('API response status:', response.status);
+    console.log('API response data type:', typeof response.data);
+    console.log('API response is array:', Array.isArray(response.data));
+    console.log('API response length:', response.data.length);
     return response.data;
   } catch (error) {
     console.error('Error fetching endpoints:', error);

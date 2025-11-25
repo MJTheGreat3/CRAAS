@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Card, Table, Tag, Button, Space, Typography, Statistic, Row, Col, Alert, Tooltip } from 'antd';
-import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined } from '@ant-design/icons';
+import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
 import { exportToExcel } from '../services/export';
 
 const { Title, Text } = Typography;
 
 const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const [exporting, setExporting] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const getRiskColor = (riskLevel) => {
     const colors = {
@@ -122,7 +123,7 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const mostCritical = getMostCritical();
 
   return (
-    <div className="results-panel">
+    <div className={`results-panel ${fullscreen ? 'fullscreen' : ''}`}>
       <Card
         title={
           <Space>
@@ -141,6 +142,15 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
               size="small"
             >
               Export Excel
+            </Button>
+            <Button
+              type="default"
+              icon={fullscreen ? <CompressOutlined /> : <ExpandOutlined />}
+              onClick={() => setFullscreen(!fullscreen)}
+              size="small"
+              title={fullscreen ? "Exit fullscreen" : "Expand to fullscreen"}
+            >
+              {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </Button>
             <Button
               danger
@@ -225,12 +235,12 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
           rowKey="endpoint_id"
           size="small"
           pagination={{
-            pageSize: 10,
+            pageSize: fullscreen ? 20 : 10,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} endpoints`,
           }}
-          scroll={{ y: 200 }}
+          scroll={{ y: fullscreen ? 400 : 200 }}
         />
       </Card>
     </div>

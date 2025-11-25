@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Form, InputNumber, Select, Button, Space, Typography, Alert, Spin } from 'antd';
-import { PlayCircleOutlined, ClearOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, ClearOutlined, ExperimentOutlined, MinusOutlined, PlusOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { analyzeContamination } from '../services/api';
 
 const { Title, Text } = Typography;
@@ -10,6 +10,9 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [minimized, setMinimized] = useState(false);
+
+
 
   const handleAnalyze = async (values) => {
     if (!contaminationPoint) {
@@ -25,8 +28,7 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
         lat: contaminationPoint.lat,
         lon: contaminationPoint.lng || contaminationPoint.lon,
         dispersion_rate_kmph: values.dispersion_rate_kmph,
-        time_window_hours: values.time_window_hours,
-        contaminant_type: values.contaminant_type
+        time_window_hours: values.time_window_hours
       };
 
       const result = await analyzeContamination(analysisData);
@@ -46,8 +48,8 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
   };
 
   return (
-    <div className="analysis-panel">
-      <Card 
+    <div className={`analysis-panel ${minimized ? 'minimized' : ''}`}>
+      <Card
         title={
           <Space>
             <ExperimentOutlined />
@@ -56,8 +58,19 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
         }
         size="small"
         style={{ width: 380 }}
+        extra={
+          <Button
+            type="text"
+            size="small"
+            icon={minimized ? <PlusOutlined /> : <MinusOutlined />}
+            onClick={() => setMinimized(!minimized)}
+            title={minimized ? "Expand panel" : "Minimize panel"}
+          />
+        }
       >
-        {contaminationPoint ? (
+        {!minimized && (
+          <>
+            {contaminationPoint ? (
           <Alert
             message="Contamination Point Set"
             description={`Lat: ${contaminationPoint.lat.toFixed(4)}, Lng: ${(contaminationPoint.lng || contaminationPoint.lon).toFixed(4)}`}
@@ -81,22 +94,10 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
           onFinish={handleAnalyze}
           initialValues={{
             dispersion_rate_kmph: 2.0,
-            time_window_hours: 24,
-            contaminant_type: 'chemical'
+            time_window_hours: 24
           }}
         >
-          <Form.Item
-            label="Contaminant Type"
-            name="contaminant_type"
-            tooltip="Type of contaminant for analysis"
-          >
-            <Select>
-              <Option value="chemical">Chemical</Option>
-              <Option value="biological">Biological</Option>
-              <Option value="thermal">Thermal</Option>
-              <Option value="sediment">Sediment</Option>
-            </Select>
-          </Form.Item>
+
 
           <Form.Item
             label="Dispersion Rate (km/h)"
@@ -155,6 +156,11 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                 loading={loading}
                 disabled={!contaminationPoint}
                 style={{ width: '100%' }}
+                title={
+                  !contaminationPoint 
+                    ? "Click on the map to add a contamination point" 
+                    : "Run contamination analysis"
+                }
               >
                 {loading ? 'Analyzing...' : 'Run Analysis'}
               </Button>
@@ -187,6 +193,8 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
             </div>
           </div>
         </div>
+          </>
+        )}
       </Card>
     </div>
   );

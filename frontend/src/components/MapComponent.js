@@ -160,8 +160,8 @@ const MapComponent = ({
         />
       )}
       
-      {/* Endpoints */}
-      {endpointsData.length > 0 && (
+      {/* Endpoints - HIDDEN by default, only show risk points */}
+      {false && endpointsData.length > 0 && (
         <GeoJSON
           data={{
             type: 'FeatureCollection',
@@ -199,27 +199,35 @@ const MapComponent = ({
         </Marker>
       ))}
       
-      {/* Risk Results */}
+      {/* Risk Results - Only show endangered endpoints */}
       {analysisResults && analysisResults.results.map((result, index) => {
         const endpoint = endpointsData.find(e => e.endpoint_id === result.endpoint_id);
-        if (!endpoint) return null;
+        if (!endpoint) {
+          console.log('Endpoint not found for result:', result.endpoint_id);
+          return null;
+        }
         
-        const coords = JSON.parse(endpoint.geometry).coordinates;
-        return (
-          <Marker
-            key={`risk-${index}`}
-            position={[coords[1], coords[0]]}
-            icon={getRiskIcon(result.risk_level)}
-          >
-            <Popup>
-              <strong>{result.endpoint_type.toUpperCase()} AT RISK</strong><br/>
-              ID: {result.endpoint_id}<br/>
-              Risk Level: {result.risk_level}<br/>
-              Arrival Time: {result.arrival_hours.toFixed(1)} hours<br/>
-              Distance: {result.distance_km.toFixed(2)} km
-            </Popup>
-          </Marker>
-        );
+        try {
+          const coords = JSON.parse(endpoint.geometry).coordinates;
+          return (
+            <Marker
+              key={`risk-${index}`}
+              position={[coords[1], coords[0]]}
+              icon={getRiskIcon(result.risk_level)}
+            >
+              <Popup>
+                <strong>{result.endpoint_type.toUpperCase()} AT RISK</strong><br/>
+                ID: {result.endpoint_id}<br/>
+                Risk Level: {result.risk_level}<br/>
+                Arrival Time: {result.arrival_hours.toFixed(1)} hours<br/>
+                Distance: {result.distance_km.toFixed(2)} km
+              </Popup>
+            </Marker>
+          );
+        } catch (error) {
+          console.error('Error parsing geometry for endpoint:', result.endpoint_id, error);
+          return null;
+        }
       })}
       
       <MapEvents onContaminationAdd={onContaminationAdd} setCursorCoords={setCursorCoords} />
