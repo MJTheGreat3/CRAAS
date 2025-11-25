@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, InputNumber, Button, Space, Typography, Alert, Select, Row, Col } from 'antd';
+import { Card, Form, InputNumber, Button, Space, Typography, Alert, Row, Col } from 'antd';
 import { PlayCircleOutlined, ClearOutlined, ExperimentOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import { analyzeContamination } from '../services/api';
 
@@ -27,7 +27,6 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
         lat: contaminationPoint.lat,
         lon: contaminationPoint.lng || contaminationPoint.lon,
         dispersion_rate: values.dispersion_rate,
-        contaminant_type: values.contaminant_type,
         analysis_radius: values.analysis_radius,
         high_threshold: values.high_threshold,
         moderate_threshold: values.moderate_threshold,
@@ -60,7 +59,16 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
           </Space>
         }
         size="small"
-        style={{ width: 380 }}
+        style={{ 
+          width: 380,
+          height: minimized ? 'auto' : '75vh',
+          overflow: 'hidden'
+        }}
+        bodyStyle={{
+          height: minimized ? 'auto' : 'calc(75vh - 57px)',
+          overflowY: 'auto',
+          padding: '12px'
+        }}
         extra={
           <Button
             type="text"
@@ -97,77 +105,76 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
           onFinish={handleAnalyze}
           initialValues={{
             dispersion_rate: 0.15,
-            contaminant_type: 'chemical',
             analysis_radius: 10.0,
             high_threshold: 10.0,
             moderate_threshold: 5.0,
             low_threshold: 1.0
           }}
+          size="small"
         >
 
-          <Form.Item
-            label="Contaminant Type"
-            name="contaminant_type"
-            rules={[{ required: true, message: 'Please select contaminant type' }]}
-          >
-            <Select placeholder="Select contaminant type">
-              <Select.Option value="chemical">Chemical</Select.Option>
-              <Select.Option value="biological">Biological</Select.Option>
-              <Select.Option value="radiological">Radiological</Select.Option>
-              <Select.Option value="thermal">Thermal</Select.Option>
-            </Select>
-          </Form.Item>
+          <Row gutter={8}>
+            <Col span={12}>
+              <Form.Item
+                label="Analysis Radius"
+                name="analysis_radius"
+                tooltip="Maximum distance to search for at-risk endpoints (in kilometers)"
+                rules={[
+                  { required: true, message: 'Please enter analysis radius' },
+                  { type: 'number', min: 1, max: 50, message: 'Radius must be between 1km and 50km' }
+                ]}
+              >
+                <InputNumber
+                  min={1}
+                  max={50}
+                  step={1}
+                  size="small"
+                  style={{ width: '100%' }}
+                  formatter={value => `${value} km`}
+                  parser={value => parseFloat(value.replace(' km', ''))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="Dispersion Rate"
+                name="dispersion_rate"
+                tooltip="Compound decay rate per kilometer (e.g., 0.15 = 15% compound reduction per km)"
+                rules={[
+                  { required: true, message: 'Please enter dispersion rate' },
+                  { type: 'number', min: 0.01, max: 0.5, message: 'Rate must be between 1% and 50%' }
+                ]}
+              >
+                <InputNumber
+                  min={0.01}
+                  max={0.5}
+                  step={0.01}
+                  size="small"
+                  style={{ width: '100%' }}
+                  formatter={value => `${(value * 100).toFixed(1)}%`}
+                  parser={value => (parseFloat(value.replace('%', '')) / 100)}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item
-            label="Analysis Radius"
-            name="analysis_radius"
-            tooltip="Maximum distance to search for at-risk endpoints (in kilometers)"
-            rules={[
-              { required: true, message: 'Please enter analysis radius' },
-              { type: 'number', min: 1, max: 50, message: 'Radius must be between 1km and 50km' }
-            ]}
+          <Form.Item 
+            label="Risk Thresholds (%)"
+            style={{ marginBottom: '12px' }}
           >
-            <InputNumber
-              min={1}
-              max={50}
-              step={1}
-              style={{ width: '100%' }}
-              formatter={value => `${value} km`}
-              parser={value => parseFloat(value.replace(' km', ''))}
-            />
-          </Form.Item>
-
-          <Form.Item
-            label="Dispersion Rate"
-            name="dispersion_rate"
-            tooltip="Compound decay rate per kilometer (e.g., 0.15 = 15% compound reduction per km)"
-            rules={[
-              { required: true, message: 'Please enter dispersion rate' },
-              { type: 'number', min: 0.01, max: 0.5, message: 'Rate must be between 1% and 50%' }
-            ]}
-          >
-            <InputNumber
-              min={0.01}
-              max={0.5}
-              step={0.01}
-              style={{ width: '100%' }}
-              formatter={value => `${(value * 100).toFixed(1)}% per km`}
-              parser={value => (parseFloat(value.replace('% per km', '')) / 100)}
-            />
-          </Form.Item>
-
-          <Form.Item label="Risk Thresholds (%)">
-            <Row gutter={8}>
+            <Row gutter={4}>
               <Col span={8}>
                 <Form.Item
                   name="high_threshold"
-                  label="High Risk ≥"
+                  label="High ≥"
                   rules={[{ required: true, message: 'Required' }]}
+                  style={{ marginBottom: '4px' }}
                 >
                   <InputNumber
                     min={0.1}
                     max={100}
                     step={0.1}
+                    size="small"
                     style={{ width: '100%' }}
                     formatter={value => `${value}%`}
                     parser={value => parseFloat(value.replace('%', ''))}
@@ -179,11 +186,13 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                   name="moderate_threshold"
                   label="Moderate ≥"
                   rules={[{ required: true, message: 'Required' }]}
+                  style={{ marginBottom: '4px' }}
                 >
                   <InputNumber
                     min={0.1}
                     max={100}
                     step={0.1}
+                    size="small"
                     style={{ width: '100%' }}
                     formatter={value => `${value}%`}
                     parser={value => parseFloat(value.replace('%', ''))}
@@ -195,11 +204,13 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                   name="low_threshold"
                   label="Low ≥"
                   rules={[{ required: true, message: 'Required' }]}
+                  style={{ marginBottom: '4px' }}
                 >
                   <InputNumber
                     min={0.1}
                     max={100}
                     step={0.1}
+                    size="small"
                     style={{ width: '100%' }}
                     formatter={value => `${value}%`}
                     parser={value => parseFloat(value.replace('%', ''))}
@@ -207,9 +218,8 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                 </Form.Item>
               </Col>
             </Row>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              Safe: Below Low Risk threshold<br/>
-              <strong>Compound Decay:</strong> 15% × 15% × 15%... per km
+            <Text type="secondary" style={{ fontSize: '11px' }}>
+              Safe: Below Low Risk threshold
             </Text>
           </Form.Item>
 
@@ -223,59 +233,59 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
             />
           )}
 
-          <Form.Item>
-            <Space style={{ width: '100%' }} direction="vertical">
+          <Form.Item style={{ marginBottom: '8px' }}>
+            <Space.Compact style={{ width: '100%' }}>
               <Button
                 type="primary"
                 htmlType="submit"
                 icon={<PlayCircleOutlined />}
                 loading={loading}
                 disabled={!contaminationPoint}
-                style={{ width: '100%' }}
+                style={{ width: '60%' }}
                 title={
                   !contaminationPoint 
                     ? "Click on the map to add a contamination point" 
                     : "Run contamination analysis"
                 }
               >
-                {loading ? 'Analyzing...' : 'Run Analysis'}
+                {loading ? 'Analyzing...' : 'Run'}
               </Button>
               
               <Button
                 icon={<ClearOutlined />}
                 onClick={handleClear}
-                style={{ width: '100%' }}
+                style={{ width: '40%' }}
               >
-                Clear & Reset
+                Reset
               </Button>
-            </Space>
+            </Space.Compact>
           </Form.Item>
         </Form>
 
-        <div style={{ marginTop: 16, padding: '12px', background: '#f5f5f5', borderRadius: 4 }}>
-          <Title level={5}>Risk Level Colors:</Title>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{ width: 12, height: 12, backgroundColor: '#ff4d4f', borderRadius: '50%', marginRight: 8 }}></div>
-              <Text strong>High Risk:</Text> <Text style={{ marginLeft: 4 }}>≥ 10% concentration</Text>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{ width: 12, height: 12, backgroundColor: '#fadb14', borderRadius: '50%', marginRight: 8 }}></div>
-              <Text strong>Moderate Risk:</Text> <Text style={{ marginLeft: 4 }}>5-10% concentration</Text>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{ width: 12, height: 12, backgroundColor: '#52c41a', borderRadius: '50%', marginRight: 8 }}></div>
-              <Text strong>Low Risk:</Text> <Text style={{ marginLeft: 4 }}>1-5% concentration</Text>
-            </div>
-          </div>
-          <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
-            <Text strong>Risk Thresholds (Chemical):</Text><br/>
-            High Risk: ≥10% concentration<br/>
-            Moderate Risk: 5-10% concentration<br/>
-            Low Risk: 1-5% concentration<br/>
-            Safe: &lt;1% concentration<br/><br/>
-            <Text strong style={{ color: '#1890ff' }}>🌊 Downstream Flow Analysis</Text><br/>
-            Uses elevation data to calculate only downstream contamination flow
+        <div style={{ marginTop: 8, padding: '8px', background: '#f5f5f5', borderRadius: 4 }}>
+          <Title level={5} style={{ marginBottom: 8 }}>Risk Colors:</Title>
+          <Row gutter={[8, 4]}>
+            <Col span={8}>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
+                <div style={{ width: 8, height: 8, backgroundColor: '#ff4d4f', borderRadius: '50%', marginRight: 4 }}></div>
+                <Text strong>High:</Text> <Text>≥10%</Text>
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
+                <div style={{ width: 8, height: 8, backgroundColor: '#fadb14', borderRadius: '50%', marginRight: 4 }}></div>
+                <Text strong>Moderate:</Text> <Text>5-10%</Text>
+              </div>
+            </Col>
+            <Col span={8}>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: '11px' }}>
+                <div style={{ width: 8, height: 8, backgroundColor: '#52c41a', borderRadius: '50%', marginRight: 4 }}></div>
+                <Text strong>Low:</Text> <Text>1-5%</Text>
+              </div>
+            </Col>
+          </Row>
+          <div style={{ marginTop: 6, fontSize: '10px', color: '#666', textAlign: 'center' }}>
+            <Text strong style={{ color: '#1890ff' }}>🌊 Downstream Flow</Text> • Compound Decay
           </div>
         </div>
           </>

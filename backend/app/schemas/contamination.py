@@ -5,7 +5,6 @@ class ContaminationInput(BaseModel):
     lat: float
     lon: float
     dispersion_rate: float  # Dispersion rate as decimal (e.g., 0.05 for 5% per km)
-    contaminant_type: str = "chemical"  # Default to chemical, not optional
     analysis_radius: float = 10.0  # Analysis radius in kilometers (default 10km)
     # Customizable risk thresholds (percentage concentrations)
     high_threshold: float = 10.0  # Default 10% for high risk

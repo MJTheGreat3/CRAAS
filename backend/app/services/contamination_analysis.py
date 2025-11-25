@@ -140,7 +140,7 @@ class ContaminationAnalysisService:
         # Step 3: Process results and determine risk levels based on distance
         risk_results = []
 
-        # Use custom thresholds provided by user, with fallback to defaults
+        # Use custom thresholds provided by user
         thresholds = {
             'high': input_data.high_threshold,
             'moderate': input_data.moderate_threshold, 
@@ -177,7 +177,7 @@ class ContaminationAnalysisService:
         # Step 5: Save contamination event to history
         contamination_event = ContaminationEvent(
             contamination_point=f"SRID=4326;POINT({input_data.lon} {input_data.lat})",
-            contaminant_type=input_data.contaminant_type,
+            contaminant_type="chemical",  # Hardcoded since removed from input
             severity_level="medium",  # Default since not used in new model
             description=None,  # Not used in new model
             analysis_results={
@@ -188,7 +188,7 @@ class ContaminationAnalysisService:
                     "lat": input_data.lat,
                     "lon": input_data.lon,
                     "dispersion_rate": input_data.dispersion_rate,
-                    "contaminant_type": input_data.contaminant_type
+                    "analysis_radius": input_data.analysis_radius
                 }
             }
         )
