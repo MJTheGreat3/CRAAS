@@ -52,7 +52,9 @@ const MapComponent = ({
       hospital: '#1890ff',
       school: '#52c41a',
       farmland: '#faad14',
-      residential: '#722ed1'
+      residential: '#722ed1',
+      industrial: '#f5222d',
+      other: '#666666'
     };
     
     return divIcon({

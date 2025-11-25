@@ -22,7 +22,9 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
       hospital: '🏥',
       school: '🏫',
       farmland: '🌾',
-      residential: '🏘️'
+      residential: '🏘️',
+      industrial: '🏭',
+      other: '📍'
     };
     return icons[type] || '📍';
   };
@@ -53,8 +55,10 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
       filters: [
         { text: 'Hospital', value: 'hospital' },
         { text: 'School', value: 'school' },
-        { text: 'Farmland', value: 'farmland' },
         { text: 'Residential', value: 'residential' },
+        { text: 'Industrial', value: 'industrial' },
+        { text: 'Farmland', value: 'farmland' },
+        { text: 'Other', value: 'other' },
       ],
       onFilter: (value, record) => record.endpoint_type === value,
     },

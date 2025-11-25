@@ -20,23 +20,23 @@ class ContaminationAnalysisService:
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             ),
             nearest_waterway AS (
-                SELECT 
+                SELECT
                     w.id,
-                    ST_ClosestPoint(w.geom, cp.geom) as snapped_point,
-                    ST_Distance(w.geom, cp.geom) as snap_distance_m
+                    ST_ClosestPoint(w.geom_ls, cp.geom) as snapped_point,
+                    ST_Distance(w.geom_ls, cp.geom) as snap_distance_m
                 FROM waterways w, contamination_point cp
-                ORDER BY w.geom <-> cp.geom
+                ORDER BY w.geom_ls <-> cp.geom
                 LIMIT 1
             ),
             nearest_vertex AS (
-                SELECT 
+                SELECT
                     v.id as vertex_id,
                     v.geom
                 FROM waterways_vertices_pgr v, nearest_waterway nw
                 ORDER BY v.geom <-> nw.snapped_point
                 LIMIT 1
             )
-            SELECT 
+            SELECT
                 nw.id as waterway_id,
                 nw.snapped_point,
                 nw.snap_distance_m,
@@ -62,20 +62,27 @@ class ContaminationAnalysisService:
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             )
             SELECT
-                e.id as endpoint_id,
+                e.fid as endpoint_id,
                 e.name,
                 CASE
+                    WHEN e.object_class = 'school' THEN 'school'
+                    WHEN e.object_class = 'hospital' THEN 'hospital'
+                    WHEN e.object_class = 'residential' THEN 'residential'
+                    WHEN e.object_class = 'industrial' THEN 'industrial'
+                    WHEN e.object_class = 'farmland' THEN 'farmland'
                     WHEN e.amenity = 'school' THEN 'school'
                     WHEN e.building = 'school' THEN 'school'
                     WHEN e.amenity = 'hospital' THEN 'hospital'
+                    WHEN e.healthcare = 'hospital' THEN 'hospital'
                     WHEN e.amenity = 'clinic' THEN 'clinic'
+                    WHEN e.healthcare = 'clinic' THEN 'clinic'
                     ELSE 'other'
                 END as endpoint_type,
                 e.geom as endpoint_geom,
                 ST_Distance(e.geom::geography, cp.geom::geography) as distance_m,
                 ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0 as distance_km,
                 (ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0) / :dispersion_rate as arrival_hours
-            FROM endpoint_sch e, contamination_point cp
+            FROM endpoints e, contamination_point cp
             WHERE e.geom IS NOT NULL
             AND (ST_Distance(e.geom::geography, cp.geom::geography) / 1000.0) / :dispersion_rate <= :time_window
             ORDER BY ST_Distance(e.geom::geography, cp.geom::geography)

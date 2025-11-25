@@ -14,20 +14,29 @@ class EndpointsService:
         """Get endpoints within specified bounds and/or filtered by type."""
         base_query = """
             SELECT
-                id as endpoint_id,
+                fid as endpoint_id,
                 CASE
+                    WHEN object_class = 'school' THEN 'school'
+                    WHEN object_class = 'hospital' THEN 'hospital'
+                    WHEN object_class = 'residential' THEN 'residential'
+                    WHEN object_class = 'industrial' THEN 'industrial'
+                    WHEN object_class = 'farmland' THEN 'farmland'
                     WHEN amenity = 'school' THEN 'school'
                     WHEN building = 'school' THEN 'school'
                     WHEN amenity = 'hospital' THEN 'hospital'
+                    WHEN healthcare = 'hospital' THEN 'hospital'
                     WHEN amenity = 'clinic' THEN 'clinic'
+                    WHEN healthcare = 'clinic' THEN 'clinic'
                     ELSE 'other'
                 END as endpoint_type,
                 NULL as intake_id,
                 ST_AsGeoJSON(geom) as geometry,
                 name,
                 amenity,
-                building
-            FROM endpoint_sch
+                building,
+                healthcare,
+                object_class
+            FROM endpoints
             WHERE geom IS NOT NULL
         """
         params = {}
@@ -61,7 +70,7 @@ class EndpointsService:
             except (ValueError, IndexError):
                 raise ValueError("Invalid bounds format. Use: 'minLon,minLat,maxLon,maxLat'")
 
-        base_query += " ORDER BY endpoint_type, id"
+        base_query += " ORDER BY endpoint_type, fid"
 
         results = self.db.execute(text(base_query), params).fetchall()
         return [row._asdict() for row in results]
@@ -71,14 +80,21 @@ class EndpointsService:
         query = text("""
             SELECT DISTINCT
                 CASE
+                    WHEN object_class = 'school' THEN 'school'
+                    WHEN object_class = 'hospital' THEN 'hospital'
+                    WHEN object_class = 'residential' THEN 'residential'
+                    WHEN object_class = 'industrial' THEN 'industrial'
+                    WHEN object_class = 'farmland' THEN 'farmland'
                     WHEN amenity = 'school' THEN 'school'
                     WHEN building = 'school' THEN 'school'
                     WHEN amenity = 'hospital' THEN 'hospital'
+                    WHEN healthcare = 'hospital' THEN 'hospital'
                     WHEN amenity = 'clinic' THEN 'clinic'
+                    WHEN healthcare = 'clinic' THEN 'clinic'
                     ELSE 'other'
                 END as endpoint_type
-            FROM endpoint_sch
-            WHERE amenity IS NOT NULL OR building IS NOT NULL
+            FROM endpoints
+            WHERE object_class IS NOT NULL OR amenity IS NOT NULL OR building IS NOT NULL OR healthcare IS NOT NULL
             ORDER BY endpoint_type
         """)
 

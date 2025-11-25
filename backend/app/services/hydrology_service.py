@@ -17,11 +17,11 @@ class HydrologyService:
                         id,
                         source,
                         target,
-                        ST_Length(geom::geography) as length_m,
-                        ST_AsGeoJSON(geom) as geometry
+                        length_m,
+                        ST_AsGeoJSON(geom_ls) as geometry
                     FROM waterways
                     WHERE ST_Intersects(
-                        geom,
+                        geom_ls,
                         ST_MakeEnvelope(:min_lon, :min_lat, :max_lon, :max_lat, 4326)
                     )
                 """)
@@ -40,8 +40,8 @@ class HydrologyService:
                     id,
                     source,
                     target,
-                    ST_Length(geom::geography) as length_m,
-                    ST_AsGeoJSON(geom) as geometry
+                    length_m,
+                    ST_AsGeoJSON(geom_ls) as geometry
                 FROM waterways
                 LIMIT 10000
             """)
@@ -54,11 +54,11 @@ class HydrologyService:
         query = text("""
             SELECT
                 id as line_id,
-                ST_AsGeoJSON(ST_ClosestPoint(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))) as snapped_point,
-                ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m,
-                ST_AsGeoJSON(geom) as line_geometry
+                ST_AsGeoJSON(ST_ClosestPoint(geom_ls, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))) as snapped_point,
+                ST_Distance(geom_ls::geography, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) as distance_m,
+                ST_AsGeoJSON(geom_ls) as line_geometry
             FROM waterways
-            ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+            ORDER BY geom_ls <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
             LIMIT 1
         """)
 
