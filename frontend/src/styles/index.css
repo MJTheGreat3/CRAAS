@@ -78,6 +78,10 @@ code {
   max-width: 300px;
 }
 
+.analysis-panel.minimized {
+  max-width: 300px;
+}
+
 .results-panel {
   position: absolute;
   bottom: 10px;
@@ -99,6 +103,14 @@ code {
   right: 10px;
   max-height: none;
   z-index: 2000;
+}
+
+.results-panel.minimized {
+  height: auto !important;
+}
+
+.results-panel.minimized .ant-card-body {
+  display: none;
 }
 
 .legend {

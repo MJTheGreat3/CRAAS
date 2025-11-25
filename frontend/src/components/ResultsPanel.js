@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Table, Tag, Button, Space, Typography, Statistic, Row, Col, Alert, Tooltip } from 'antd';
-import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import { DownloadOutlined, InfoCircleOutlined, ExclamationCircleOutlined, CloseOutlined, ExpandOutlined, CompressOutlined, PlusOutlined, MinusOutlined } from '@ant-design/icons';
 import { exportToExcel } from '../services/export';
 
 const { Title, Text } = Typography;
@@ -8,6 +8,7 @@ const { Title, Text } = Typography;
 const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const [exporting, setExporting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
 
   const getRiskColor = (riskLevel) => {
     const colors = {
@@ -123,7 +124,7 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
   const mostCritical = getMostCritical();
 
   return (
-    <div className={`results-panel ${fullscreen ? 'fullscreen' : ''}`}>
+    <div className={`results-panel ${fullscreen ? 'fullscreen' : ''} ${minimized ? 'minimized' : ''}`}>
       <Card
         title={
           <Space>
@@ -153,6 +154,15 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
               {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </Button>
             <Button
+              type="default"
+              icon={minimized ? <PlusOutlined /> : <MinusOutlined />}
+              onClick={() => setMinimized(!minimized)}
+              size="small"
+              title={minimized ? "Expand panel" : "Minimize panel"}
+            >
+              {minimized ? "Expand" : "Minimize"}
+            </Button>
+            <Button
               danger
               icon={<CloseOutlined />}
               onClick={onClose}
@@ -164,84 +174,88 @@ const ResultsPanel = ({ results, contaminationPoint, onClose }) => {
           </Space>
         }
       >
-        {/* Summary Statistics */}
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={6}>
-            <Statistic
-              title="Total at Risk"
-              value={results.total_at_risk}
-              valueStyle={{ color: '#cf1322' }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="High Risk"
-              value={riskStats.High}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="Moderate Risk"
-              value={riskStats.Moderate}
-              valueStyle={{ color: '#fa8c16' }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="Low Risk"
-              value={riskStats.Low}
-              valueStyle={{ color: '#fadb14' }}
-            />
-          </Col>
-        </Row>
+        {!minimized && (
+          <>
+            {/* Summary Statistics */}
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={6}>
+                <Statistic
+                  title="Total at Risk"
+                  value={results.total_at_risk}
+                  valueStyle={{ color: '#cf1322' }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="High Risk"
+                  value={riskStats.High}
+                  valueStyle={{ color: '#ff4d4f' }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Moderate Risk"
+                  value={riskStats.Moderate}
+                  valueStyle={{ color: '#fa8c16' }}
+                />
+              </Col>
+              <Col span={6}>
+                <Statistic
+                  title="Low Risk"
+                  value={riskStats.Low}
+                  valueStyle={{ color: '#fadb14' }}
+                />
+              </Col>
+            </Row>
 
-        {/* Critical Alert */}
-        {mostCritical && (
-          <Alert
-            message="Critical Alert"
-            description={
-              <span>
-                <strong>{mostCritical.endpoint_type.toUpperCase()}</strong> at location{' '}
-                <strong>{mostCritical.endpoint_id}</strong> will be contaminated in{' '}
-                <strong>{mostCritical.arrival_hours.toFixed(1)} hours</strong> - Immediate action required!
-              </span>
-            }
-            type="error"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
+            {/* Critical Alert */}
+            {mostCritical && (
+              <Alert
+                message="Critical Alert"
+                description={
+                  <span>
+                    <strong>{mostCritical.endpoint_type.toUpperCase()}</strong> at location{' '}
+                    <strong>{mostCritical.endpoint_id}</strong> will be contaminated in{' '}
+                    <strong>{mostCritical.arrival_hours.toFixed(1)} hours</strong> - Immediate action required!
+                  </span>
+                }
+                type="error"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* Analysis Info */}
+            <div style={{ marginBottom: 16, padding: '8px 12px', background: '#f0f2f5', borderRadius: 4 }}>
+              <Space split={<span>|</span>}>
+                <Text type="secondary">
+                  <InfoCircleOutlined /> Analysis Time: {results.analysis_time_seconds.toFixed(2)}s
+                </Text>
+                <Text type="secondary">
+                  Contamination ID: #{results.contamination_id}
+                </Text>
+                <Text type="secondary">
+                  Source: ({contaminationPoint.lat.toFixed(4)}, {(contaminationPoint.lng || contaminationPoint.lon).toFixed(4)})
+                </Text>
+              </Space>
+            </div>
+
+            {/* Results Table */}
+            <Table
+              columns={columns}
+              dataSource={results.results}
+              rowKey="endpoint_id"
+              size="small"
+              pagination={{
+                pageSize: fullscreen ? 20 : 10,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} endpoints`,
+              }}
+              scroll={{ y: fullscreen ? 400 : 200 }}
+            />
+          </>
         )}
-
-        {/* Analysis Info */}
-        <div style={{ marginBottom: 16, padding: '8px 12px', background: '#f0f2f5', borderRadius: 4 }}>
-          <Space split={<span>|</span>}>
-            <Text type="secondary">
-              <InfoCircleOutlined /> Analysis Time: {results.analysis_time_seconds.toFixed(2)}s
-            </Text>
-            <Text type="secondary">
-              Contamination ID: #{results.contamination_id}
-            </Text>
-            <Text type="secondary">
-              Source: ({contaminationPoint.lat.toFixed(4)}, {(contaminationPoint.lng || contaminationPoint.lon).toFixed(4)})
-            </Text>
-          </Space>
-        </div>
-
-        {/* Results Table */}
-        <Table
-          columns={columns}
-          dataSource={results.results}
-          rowKey="endpoint_id"
-          size="small"
-          pagination={{
-            pageSize: fullscreen ? 20 : 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} endpoints`,
-          }}
-          scroll={{ y: fullscreen ? 400 : 200 }}
-        />
       </Card>
     </div>
   );
