@@ -19,26 +19,32 @@
 
 .contamination-marker {
   border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
-  animation: pulse 2s infinite;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  z-index: 10000 !important;
+  position: relative !important;
 }
 
-.risk-marker {
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+/* Ensure contamination marker appears above all other markers */
+.leaflet-marker-pane .contamination-marker {
+  z-index: 10000 !important;
 }
+
+.risk-marker-container {
+  transform: translate(-50%, -50%);
+}
+
+
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.3);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(255, 77, 79, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 0 0 6px rgba(0, 0, 0, 0.1);
   }
   100% {
-    box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.3);
   }
 }
 

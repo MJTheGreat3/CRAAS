@@ -14,7 +14,7 @@ class ContaminationAnalysisService:
         """Perform contamination spread analysis using pgRouting."""
         start_time = time.time()
         
-        # Step 1: Snap contamination point to nearest waterway and find nearest vertex
+        # Step 1: Snap contamination point to nearest waterway and find flow source vertex
         snap_query = text("""
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
@@ -22,27 +22,47 @@ class ContaminationAnalysisService:
             nearest_waterway AS (
                 SELECT
                     w.id,
+                    w.source,
+                    w.target,
                     ST_ClosestPoint(w.geom_ls, cp.geom) as snapped_point,
-                    ST_Distance(w.geom_ls, cp.geom) as snap_distance_m
-                FROM waterways w, contamination_point cp
+                    ST_Distance(w.geom_ls, cp.geom) as snap_distance_m,
+                    v1.elev as source_elev,
+                    v2.elev as target_elev,
+                    CASE 
+                        WHEN v1.elev > v2.elev THEN w.source  -- Flow from source to target
+                        WHEN v2.elev > v1.elev THEN w.target  -- Flow from target to source (reverse)
+                        ELSE w.source  -- Default to source for flat terrain
+                    END as flow_source_vertex
+                FROM waterways w
+                CROSS JOIN contamination_point cp
+                LEFT JOIN waterways_vertices_pgr v1 ON w.source = v1.id
+                LEFT JOIN waterways_vertices_pgr v2 ON w.target = v2.id
                 ORDER BY w.geom_ls <-> cp.geom
                 LIMIT 1
             ),
-            nearest_vertex AS (
+            flow_source_vertex_info AS (
                 SELECT
                     v.id as vertex_id,
                     v.geom
-                FROM waterways_vertices_pgr v, nearest_waterway nw
-                ORDER BY v.geom <-> nw.snapped_point
-                LIMIT 1
+                FROM waterways_vertices_pgr v
+                CROSS JOIN nearest_waterway nw
+                WHERE v.id = nw.flow_source_vertex
             )
             SELECT
                 nw.id as waterway_id,
                 nw.snapped_point,
                 nw.snap_distance_m,
-                nv.vertex_id,
-                nv.geom as vertex_geom
-            FROM nearest_waterway nw, nearest_vertex nv
+                nw.flow_source_vertex as vertex_id,
+                fv.geom as vertex_geom,
+                nw.source_elev,
+                nw.target_elev,
+                CASE 
+                    WHEN nw.source_elev > nw.target_elev THEN 'DOWNSTREAM (source→target)'
+                    WHEN nw.target_elev > nw.source_elev THEN 'DOWNSTREAM (target→source)'
+                    ELSE 'FLAT'
+                END as flow_direction
+            FROM nearest_waterway nw
+            CROSS JOIN flow_source_vertex_info fv
         """)
         
         snap_result = self.db.execute(snap_query, {
@@ -61,17 +81,30 @@ class ContaminationAnalysisService:
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             ),
-            -- Find nearest waterway vertex to contamination point
-            nearest_vertex AS (
-                SELECT 
-                    v.id as vertex_id,
-                    v.elev as contamination_elev
-                FROM waterways_vertices_pgr v, contamination_point cp
-                ORDER BY v.geom <-> cp.geom
+            -- Find nearest waterway segment and determine flow direction
+            nearest_waterway AS (
+                SELECT
+                    w.id,
+                    w.source,
+                    w.target,
+                    ST_ClosestPoint(w.geom_ls, cp.geom) as snapped_point,
+                    ST_Distance(w.geom_ls, cp.geom) as snap_distance_m,
+                    v1.elev as source_elev,
+                    v2.elev as target_elev,
+                    CASE 
+                        WHEN v1.elev > v2.elev THEN w.source  -- Flow from source to target
+                        WHEN v2.elev > v1.elev THEN w.target  -- Flow from target to source (reverse)
+                        ELSE w.source  -- Default to source for flat terrain
+                    END as flow_source_vertex
+                FROM waterways w
+                CROSS JOIN contamination_point cp
+                LEFT JOIN waterways_vertices_pgr v1 ON w.source = v1.id
+                LEFT JOIN waterways_vertices_pgr v2 ON w.target = v2.id
+                ORDER BY w.geom_ls <-> cp.geom
                 LIMIT 1
             ),
             -- True downstream flow analysis using pgr_drivingDistance
-            -- This finds all vertices reachable following water flow direction with elevation-based costs
+            -- This finds all vertices reachable following STRICTLY downstream water flow
             downstream_reachable AS (
                 SELECT 
                     dr.node as vertex_id,
@@ -80,11 +113,10 @@ class ContaminationAnalysisService:
                 FROM pgr_drivingDistance(
                     'SELECT id, source, target, 
                      CASE 
-                        WHEN source_elev > target_elev AND (target_elev - source_elev) >= -50 THEN 0.1  -- Prefer downhill flow within reasonable elevation change
-                        WHEN source_elev = target_elev THEN 5.0   -- Discourage flat flow
-                        ELSE 1000.0                                  -- Almost completely block uphill flow
+                        WHEN source_elev > target_elev AND (target_elev - source_elev) >= -50 THEN 0.1  -- Allow only downhill flow within reasonable elevation change
+                        ELSE 1000.0                                  -- Completely block flat or uphill flow
                      END as cost,
-                     1000.0 as reverse_cost  -- Almost completely block reverse flow
+                     1000.0 as reverse_cost  -- Completely block reverse flow
                      FROM (
                          SELECT w.id, w.source, w.target,
                                 COALESCE(v1.elev, 0) as source_elev, 
@@ -94,14 +126,14 @@ class ContaminationAnalysisService:
                          LEFT JOIN waterways_vertices_pgr v2 ON w.target = v2.id
                          WHERE COALESCE(v1.elev, 0) > 0 AND COALESCE(v2.elev, 0) > 0  -- Only use segments with valid elevation data
                      ) w_elev',
-                    (SELECT vertex_id FROM nearest_vertex),
+                    (SELECT flow_source_vertex FROM nearest_waterway),
                     :analysis_radius * 10,  -- Increase radius to account for higher costs
                     directed := true
                 ) dr
                 JOIN waterways_vertices_pgr v ON dr.node = v.id
                 WHERE dr.agg_cost > 0  -- Exclude the source vertex itself
                 AND dr.agg_cost <= :analysis_radius * 2  -- Filter by actual distance, not accumulated cost
-                AND v.elev <= (SELECT contamination_elev FROM nearest_vertex) + 10  -- Only include vertices at or slightly below source elevation
+                AND v.elev <= (SELECT GREATEST(source_elev, target_elev) FROM nearest_waterway)  -- Only include vertices at or below source elevation
             ),
             -- Find outlets near downstream reachable vertices
             downstream_outlets AS (

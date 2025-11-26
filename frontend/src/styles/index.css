@@ -70,22 +70,12 @@ code {
   }
 }
 
-.risk-marker {
-  animation: pulse 2s infinite;
-}
+
 
 /* Risk level colors */
-.risk-high {
-  background-color: #ff4d4f !important;
-}
 
-.risk-moderate {
-  background-color: #fadb14 !important;
-}
 
-.risk-low {
-  background-color: #52c41a !important;
-}
+
 
 .endpoint-school {
   background-color: #52c41a;
@@ -99,17 +89,9 @@ code {
   background-color: #722ed1;
 }
 
-.risk-high {
-  background-color: #ff4d4f;
-}
 
-.risk-moderate {
-  background-color: #fa8c16;
-}
 
-.risk-low {
-  background-color: #fadb14;
-}
+
 
 .analysis-panel {
   position: absolute;

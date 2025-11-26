@@ -166,7 +166,7 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
               <Col span={8}>
                 <Form.Item
                   name="high_threshold"
-                  label="High ≥"
+                  label="High"
                   rules={[{ required: true, message: 'Required' }]}
                   style={{ marginBottom: '4px' }}
                 >
@@ -176,15 +176,15 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                     step={0.1}
                     size="small"
                     style={{ width: '100%' }}
-                    formatter={value => `${value}%`}
-                    parser={value => parseFloat(value.replace('%', ''))}
+                    formatter={value => `≥ ${value}%`}
+                    parser={value => parseFloat(value.replace('≥ ', '').replace('%', ''))}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item
                   name="moderate_threshold"
-                  label="Moderate ≥"
+                  label="Med"
                   rules={[{ required: true, message: 'Required' }]}
                   style={{ marginBottom: '4px' }}
                 >
@@ -194,15 +194,15 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                     step={0.1}
                     size="small"
                     style={{ width: '100%' }}
-                    formatter={value => `${value}%`}
-                    parser={value => parseFloat(value.replace('%', ''))}
+                    formatter={value => `≥ ${value}%`}
+                    parser={value => parseFloat(value.replace('≥ ', '').replace('%', ''))}
                   />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item
                   name="low_threshold"
-                  label="Low ≥"
+                  label="Low"
                   rules={[{ required: true, message: 'Required' }]}
                   style={{ marginBottom: '4px' }}
                 >
@@ -212,8 +212,8 @@ const AnalysisPanel = ({ contaminationPoint, onAnalysisComplete, onClear }) => {
                     step={0.1}
                     size="small"
                     style={{ width: '100%' }}
-                    formatter={value => `${value}%`}
-                    parser={value => parseFloat(value.replace('%', ''))}
+                    formatter={value => `≥ ${value}%`}
+                    parser={value => parseFloat(value.replace('≥ ', '').replace('%', ''))}
                   />
                 </Form.Item>
               </Col>

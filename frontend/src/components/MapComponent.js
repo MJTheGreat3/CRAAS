@@ -103,9 +103,10 @@ const MapComponent = ({
   const getContaminationIcon = () => {
     return divIcon({
       className: 'contamination-marker',
-      html: '<div style="background-color: #ff4d4f; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
-      iconSize: [16, 16],
-      iconAnchor: [8, 8]
+      html: '<div style="background-color: #000000; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+      zIndex: 10000
     });
   };
 
@@ -130,24 +131,26 @@ const MapComponent = ({
       html: `
         <div style="
           background-color: ${colors[riskLevel]}; 
-          width: 28px; 
-          height: 28px; 
+          width: 22px; 
+          height: 22px; 
           border-radius: 50%; 
-          border:3px solid white;
+          border: 3px solid white;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 14px;
+          font-size: 12px;
           font-weight: bold;
           color: white;
           box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-          animation: pulse 2s infinite;
+          box-sizing: border-box;
+          margin: 3px;
         ">
           ${endpointIcons[endpointType] || '•'}
         </div>
       `,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17]
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14]
     });
   };
 
@@ -246,21 +249,6 @@ const MapComponent = ({
         />
       )}
       
-      {/* Contamination Points */}
-      {contaminationPoints.map((point, index) => (
-        <Marker
-          key={`contamination-${index}`}
-          position={[point.lat, point.lng || point.lon]}
-          icon={getContaminationIcon()}
-        >
-          <Popup>
-            <strong>Contamination Point</strong><br/>
-            Lat: {point.lat.toFixed(4)}<br/>
-            Lng: {(point.lng || point.lon).toFixed(4)}
-          </Popup>
-        </Marker>
-      ))}
-      
       {/* Risk Results - Only show endangered endpoints */}
       {analysisResults && analysisResults.results.map((result, index) => {
         const endpoint = endpointsData.find(e => e.endpoint_id === result.endpoint_id);
@@ -271,10 +259,24 @@ const MapComponent = ({
         
         try {
           const coords = JSON.parse(endpoint.geometry).coordinates;
+          const endpointLat = coords[1];
+          const endpointLng = coords[0];
+          
+          // Check if this endpoint is at the same location as any contamination point
+          const isAtContaminationPoint = contaminationPoints.some(cp => 
+            Math.abs(cp.lat - endpointLat) < 0.0001 && 
+            Math.abs((cp.lng || cp.lon) - endpointLng) < 0.0001
+          );
+          
+          // Don't render risk marker if it's at the same location as contamination point
+          if (isAtContaminationPoint) {
+            return null;
+          }
+          
           return (
             <Marker
               key={`risk-${index}`}
-              position={[coords[1], coords[0]]}
+              position={[endpointLat, endpointLng]}
               icon={getRiskIcon(result.risk_level, result.endpoint_type)}
             >
               <Popup>
@@ -291,6 +293,22 @@ const MapComponent = ({
           return null;
         }
       })}
+      
+      {/* Contamination Points - Rendered last to appear on top */}
+      {contaminationPoints.map((point, index) => (
+        <Marker
+          key={`contamination-${index}`}
+          position={[point.lat, point.lng || point.lon]}
+          icon={getContaminationIcon()}
+          zIndex={10000}
+        >
+          <Popup>
+            <strong>Contamination Point</strong><br/>
+            Lat: {point.lat.toFixed(4)}<br/>
+            Lng: {(point.lng || point.lon).toFixed(4)}
+          </Popup>
+        </Marker>
+      ))}
       
       <MapEvents onContaminationAdd={onContaminationAdd} setCursorCoords={setCursorCoords} />
     </MapContainer>
