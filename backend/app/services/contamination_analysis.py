@@ -55,19 +55,66 @@ class ContaminationAnalysisService:
         
         source_vertex = snap_result.vertex_id
         
-        #         # Step 2: Downstream analysis using elevation comparison
-        # This finds endpoints at lower elevation than contamination point (true downstream flow)
+        # Step 2: True downstream analysis using pgRouting flow routing
+        # This finds endpoints reachable via actual downstream waterway flow paths
         downstream_query = text("""
             WITH contamination_point AS (
                 SELECT ST_SetSRID(ST_MakePoint(:lon, :lat), 4326) as geom
             ),
-            -- Get contamination point elevation
-            contamination_elevation AS (
+            -- Find nearest waterway vertex to contamination point
+            nearest_vertex AS (
                 SELECT 
+                    v.id as vertex_id,
                     v.elev as contamination_elev
                 FROM waterways_vertices_pgr v, contamination_point cp
                 ORDER BY v.geom <-> cp.geom
                 LIMIT 1
+            ),
+            -- True downstream flow analysis using pgr_drivingDistance
+            -- This finds all vertices reachable following water flow direction with elevation-based costs
+            downstream_reachable AS (
+                SELECT 
+                    dr.node as vertex_id,
+                    dr.agg_cost as flow_distance_km,
+                    v.elev as vertex_elevation
+                FROM pgr_drivingDistance(
+                    'SELECT id, source, target, 
+                     CASE 
+                        WHEN source_elev > target_elev AND (target_elev - source_elev) >= -50 THEN 0.1  -- Prefer downhill flow within reasonable elevation change
+                        WHEN source_elev = target_elev THEN 5.0   -- Discourage flat flow
+                        ELSE 1000.0                                  -- Almost completely block uphill flow
+                     END as cost,
+                     1000.0 as reverse_cost  -- Almost completely block reverse flow
+                     FROM (
+                         SELECT w.id, w.source, w.target,
+                                COALESCE(v1.elev, 0) as source_elev, 
+                                COALESCE(v2.elev, 0) as target_elev
+                         FROM waterways w
+                         LEFT JOIN waterways_vertices_pgr v1 ON w.source = v1.id
+                         LEFT JOIN waterways_vertices_pgr v2 ON w.target = v2.id
+                         WHERE COALESCE(v1.elev, 0) > 0 AND COALESCE(v2.elev, 0) > 0  -- Only use segments with valid elevation data
+                     ) w_elev',
+                    (SELECT vertex_id FROM nearest_vertex),
+                    :analysis_radius * 10,  -- Increase radius to account for higher costs
+                    directed := true
+                ) dr
+                JOIN waterways_vertices_pgr v ON dr.node = v.id
+                WHERE dr.agg_cost > 0  -- Exclude the source vertex itself
+                AND dr.agg_cost <= :analysis_radius * 2  -- Filter by actual distance, not accumulated cost
+                AND v.elev <= (SELECT contamination_elev FROM nearest_vertex) + 10  -- Only include vertices at or slightly below source elevation
+            ),
+            -- Find outlets near downstream reachable vertices
+            downstream_outlets AS (
+                SELECT DISTINCT
+                    o.osm_id,
+                    MIN(dr.flow_distance_km + ST_Distance(o.geom::geography, v.geom::geography) / 1000.0) as total_distance_km
+                FROM outlets o
+                JOIN downstream_reachable dr ON ST_DWithin(o.geom, (
+                    SELECT geom FROM waterways_vertices_pgr WHERE id = dr.vertex_id
+                ), 1000)
+                JOIN waterways_vertices_pgr v ON dr.vertex_id = v.id
+                WHERE dr.flow_distance_km > 0  -- Ensure actual downstream flow
+                GROUP BY o.osm_id
             )
             SELECT
                 e.fid as endpoint_id,
@@ -86,22 +133,20 @@ class ContaminationAnalysisService:
                     WHEN e.healthcare = 'clinic' THEN 'clinic'
                     ELSE 'other'
                 END as endpoint_type,
-                -- Distance calculations (simplified for performance)
-                ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography) / 1000.0 as waterway_distance_km,
+                COALESCE(downstream_outlets.total_distance_km, 0) as waterway_distance_km,
                 0.5 as pipeline_distance_km,
-                1 as waterway_hops
+                CASE WHEN downstream_outlets.total_distance_km IS NOT NULL THEN 1 ELSE 0 END as waterway_hops
             FROM endpoints e
             INNER JOIN outlets o ON e.osm_id = o.osm_id
-            CROSS JOIN contamination_elevation ce
+            INNER JOIN downstream_outlets ON o.osm_id = downstream_outlets.osm_id
             WHERE e.geom IS NOT NULL 
-            AND o.elevation::double precision < ce.contamination_elev  -- CRITICAL: Only downstream (lower elevation)
+            AND downstream_outlets.total_distance_km IS NOT NULL
             AND (
                 e.object_class IN ('school', 'hospital', 'residential', 'industrial', 'farmland') OR
                 e.amenity IN ('school', 'hospital', 'clinic') OR
                 e.healthcare IS NOT NULL
             )
-            AND ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography) / 1000.0 <= :analysis_radius
-            ORDER BY ST_Distance(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, e.geom::geography)
+            ORDER BY downstream_outlets.total_distance_km
             LIMIT 500
         """)
 
